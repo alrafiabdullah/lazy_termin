@@ -15,7 +15,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-load_dotenv()
+load_dotenv(override=True)
 
 logging.basicConfig(
     format=(
@@ -256,6 +256,8 @@ def send_ses_email(email, subject, body):
                 },
             },
             Source=SENDER,
+            ConfigurationSetName=os.getenv("AWS_SES_CONFIGURATION_SET")
+
         )
         return True
     except NoCredentialsError as exc:
