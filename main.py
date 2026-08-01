@@ -48,6 +48,7 @@ def setup_driver():
     driver = webdriver.Chrome(options=options)
     return driver
 
+
 def main():
     logger.info("Starting the application...")
     driver = setup_driver()
@@ -55,9 +56,21 @@ def main():
     get_random_wait_time()
     logger.info(f"Page title: {driver.title}")
 
+    wait = WebDriverWait(driver, 10)
+
+    # step 1
+    # get the button element by its name component
+    auslaenderbehoerde_button = wait.until(
+        EC.element_to_be_clickable((By.NAME, "Ausländerbehörde"))
+    )
+    get_random_wait_time()
+    click_element(driver, auslaenderbehoerde_button)
+    logger.info("Clicked the Ausländerbehörde button.")
+    get_random_wait_time()
 
     logger.info("Application finished.")
 
 if __name__ == "__main__":
     TERMIN_URL = os.getenv("TERMIN_URL")
+
     main()
