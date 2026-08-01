@@ -15,7 +15,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-load_dotenv()
+load_dotenv(override=True)
 
 logging.basicConfig(
     format=(
@@ -212,7 +212,7 @@ def get_email_body(body):
     </html>
     """
 
-def send_email(email, subject, body):
+def send_ses_email(email, subject, body):
     email_subject = subject or "New Appointment Available"
     BODY_HTML = get_email_body(body)
     CHARSET = "UTF-8"
@@ -222,9 +222,10 @@ def send_email(email, subject, body):
     region_name = os.getenv("AWS_REGION")
 
     if not access_key_id or not secret_access_key or not region_name:
-        raise RuntimeError(
+        logger.error(
             "Missing AWS credentials in .env. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and AWS_REGION."
         )
+        return False
 
     client = boto3.client(
         "ses",
@@ -255,13 +256,16 @@ def send_email(email, subject, body):
                 },
             },
             Source=SENDER,
+            ConfigurationSetName=os.getenv("AWS_SES_CONFIGURATION_SET")
+
         )
+        return True
     except NoCredentialsError as exc:
         logger.error("AWS SES credentials were not found in the .env file.")
-        raise RuntimeError("AWS SES credentials were not found in the .env file.") from exc
+        return False
     except ClientError as exc:
         logger.error("AWS SES request failed: %s", exc.response["Error"]["Message"])
-        raise
+        return False
     else:
         logger.info("Email sent! Message ID: %s", response["MessageId"])
 
@@ -297,7 +301,8 @@ def main():
             break
 
     if target_button is None:
-        raise RuntimeError("No 'Verlängerung' button was found.")
+        logger.error("No 'Verlängerung' button was found.")
+        return
 
     click_element(driver, target_button)
     logger.info("Clicked the plus button to increase the number of Anliegen.")
@@ -336,9 +341,13 @@ def main():
         logger.info("A free appointment was found!")
         email_addresses = get_email_addresses()
         for email in email_addresses:
-            send_email(email=email, body="A free appointment was found!", subject="Appointment Alert")
+            ses_email_status = send_ses_email(email=email, body="A free appointment was found!", subject="Appointment Alert")
+            if not ses_email_status:
+                logger.error(f"Failed to send email to {email}.")
+
         logger.info(f"Email notifications sent to {len(email_addresses)} recipient(s).")
-            
+    else:
+        logger.info("No free appointments found.")
 
     logger.info("Application finished.")
 
