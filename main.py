@@ -56,9 +56,8 @@ def setup_driver():
     return driver
 
 def get_email_addresses():
-    with open("emails.txt", "r") as file:
-        email_addresses = [line.strip() for line in file if line.strip()]
-
+    email_txt = os.getenv("EMAIL_IDS").split(",")
+    email_addresses = [email.strip() for email in email_txt if email.strip()]
     return email_addresses
 
 def get_email_body(body):
@@ -268,11 +267,6 @@ def send_email(email, subject, body):
 
 def main():
     logger.info("Starting the application...")
-
-    file_name = "emails.txt"
-    if not os.path.exists(file_name):
-        logger.error(f"{file_name} file not found. Please create the file with email addresses.")
-        return
 
     driver = setup_driver()
     driver.get(TERMIN_URL)
