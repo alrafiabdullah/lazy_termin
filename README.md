@@ -2,6 +2,10 @@
 
 Lazy Termin is a Python automation script that checks a municipal appointment booking page, navigates through the relevant steps, and sends email notifications when a free appointment becomes available.
 
+##
+[![Termin Cron](https://github.com/alrafiabdullah/lazy_termin/actions/workflows/termin_cron.yml/badge.svg)](https://github.com/alrafiabdullah/lazy_termin/actions/workflows/termin_cron.yml)
+##
+
 ## Features
 - Opens the appointment page in a headless Chrome browser
 - Automates the selection of the relevant service and request type
