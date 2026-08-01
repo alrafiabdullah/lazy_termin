@@ -29,7 +29,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run exchange rate update
+      - name: Run appointment checker
         env:
           TERMIN_URL: ${{ secrets.TERMIN_URL }}
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
@@ -37,6 +37,8 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+          EMAIL_IDS: ${{ secrets.EMAIL_IDS }}
 
         run: |
           python main.py
