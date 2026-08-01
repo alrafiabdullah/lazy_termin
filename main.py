@@ -68,6 +68,24 @@ def main():
     logger.info("Clicked the Ausländerbehörde button.")
     get_random_wait_time()
 
+    # step 2
+    # get button element by its data-type component
+    plus_data_fields = wait.until(
+        EC.presence_of_all_elements_located((By.XPATH, "//button[@data-type='plus']"))
+    )
+    target_button = None
+    for plus_data in plus_data_fields:
+        if "Verlängerung" in (plus_data.get_attribute("title") or ""):
+            target_button = plus_data
+            break
+
+    if target_button is None:
+        raise RuntimeError("No 'Verlängerung' button was found.")
+
+    click_element(driver, target_button)
+    logger.info("Clicked the plus button to increase the number of Anliegen.")
+    get_random_wait_time()
+
     logger.info("Application finished.")
 
 if __name__ == "__main__":
