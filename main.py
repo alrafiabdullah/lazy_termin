@@ -49,7 +49,7 @@ def click_element(driver, element):
 
 def setup_driver():
     options = webdriver.ChromeOptions()
-    # options.add_argument("--headless")  # Run in headless mode
+    options.add_argument("--headless")  # Run in headless mode
     options.add_argument("--disable-gpu")  # Disable GPU acceleration
     options.add_argument("--no-sandbox")  # Bypass OS security model
     driver = webdriver.Chrome(options=options)
