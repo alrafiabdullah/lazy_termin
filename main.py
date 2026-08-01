@@ -104,6 +104,22 @@ def main():
     logger.info("Clicked the next in step 3 button.")
     get_random_wait_time()
 
+    # step 4
+    termin_found = False
+    h2_elements = wait.until(
+        EC.presence_of_all_elements_located((By.CLASS_NAME, "h1like"))
+    )
+    for h2 in h2_elements:
+        if "Kein freier Termin" in h2.text:
+            continue
+
+        termin_found = True
+
+    if termin_found:
+        logger.info("A free appointment was found!")
+            
+    get_random_wait_time()
+
     logger.info("Application finished.")
 
 if __name__ == "__main__":
