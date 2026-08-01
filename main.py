@@ -86,6 +86,15 @@ def main():
     logger.info("Clicked the plus button to increase the number of Anliegen.")
     get_random_wait_time()
 
+    # get the next button element by its value attribute
+    step_2_next_button = wait.until(
+        EC.element_to_be_clickable((By.XPATH, "//*[@value='Weiter']"))
+    )
+    get_random_wait_time()
+    click_element(driver, step_2_next_button)
+    logger.info("Clicked the next in step 2 button.")
+    get_random_wait_time()
+
     logger.info("Application finished.")
 
 if __name__ == "__main__":
