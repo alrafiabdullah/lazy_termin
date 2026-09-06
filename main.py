@@ -266,8 +266,7 @@ def send_ses_email(email, subject, body):
     except ClientError as exc:
         logger.error("AWS SES request failed: %s", exc.response["Error"]["Message"])
         return False
-    else:
-        logger.info("Email sent! Message ID: %s", response["MessageId"])
+
 
 def main():
     logger.info("Starting the application...")
