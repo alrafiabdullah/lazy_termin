@@ -164,9 +164,9 @@ def get_email_body(body):
     </html>
     """
 
-def send_ses_email(email, subject, body):
+def send_ses_email(email, subject, body, from_tele=False):
     email_subject = subject or "New Appointment Available"
-    BODY_HTML = get_email_body(body)
+    BODY_HTML = body if from_tele else get_email_body(body)
     CHARSET = "UTF-8"
 
     access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
