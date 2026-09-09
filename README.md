@@ -27,9 +27,15 @@ AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_SES_CONFIGURATION_SET=
 EMAIL_IDS=
+TELEGRAM_BOT_TOKEN=
+MAXIMUM_ENTRIES=
+DEBUG=
+ADMIN_ID=
 ```
 
-`EMAIL_IDS` should contain a comma-separated list of recipient email addresses.
+- `EMAIL_IDS` should contain a comma-separated list of recipient email addresses.
+- Set `DEBUG=False` to write logs to `app.log`; leave it as `True` to show logs in the terminal.
+- Find your `ADMIN_ID` by sending a message to your bot and checking the logs for the `user ID`.
 
 ## Setup
 1. Install the required Python packages:
