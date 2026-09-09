@@ -41,5 +41,12 @@ jobs:
 
           EMAIL_IDS: ${{ secrets.EMAIL_IDS }}
 
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          MAXIMUM_ENTRIES: ${{ secrets.MAXIMUM_ENTRIES }}
+          DEBUG: ${{ secrets.DEBUG }}
+          DB_FILE: ${{ secrets.DB_FILE }}
+          ADMIN_ID: ${{ secrets.ADMIN_ID }}
+          ALLOWED_DOMAINS: ${{ secrets.ALLOWED_DOMAINS }}
+
         run: |
           python main.py
