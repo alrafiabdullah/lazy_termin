@@ -1,12 +1,14 @@
 import logging
 import os
 from datetime import timezone
+from logging.handlers import TimedRotatingFileHandler
 
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
 LOG_TO_TERMINAL = os.getenv("DEBUG").strip().lower() == "true"
+LOG_LEVEL = logging.DEBUG if LOG_TO_TERMINAL else logging.INFO
 LOG_FORMAT = (
     "%(asctime)s | "
     "%(levelname)-8s | "
@@ -15,14 +17,21 @@ LOG_FORMAT = (
 )
 
 logger = logging.getLogger("lazy_termin")
-logger.setLevel(logging.INFO)
+logger.setLevel(LOG_LEVEL)
 logger.propagate = False
 
 handler = (
     logging.StreamHandler()
     if LOG_TO_TERMINAL
-    else logging.FileHandler("app.log", mode="a", encoding="utf-8")
+    else TimedRotatingFileHandler(
+        "app.log",
+        when="D",
+        interval=7,
+        backupCount=5,
+        encoding="utf-8",
+    )
 )
+handler.setLevel(LOG_LEVEL)
 handler.setFormatter(logging.Formatter(LOG_FORMAT))
 logger.addHandler(handler)
 
