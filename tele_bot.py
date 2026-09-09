@@ -116,7 +116,7 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     allowed_domain_list = [d.strip().lower() for d in ALLOWED_DOMAINS.split(",")]
     if domain not in allowed_domain_list:
         await update.message.reply_text(
-            "Sorry, you need to use your @abc.com email address."
+            "Sorry, you need to use your Uni email address."
         )
         return EMAIL
 
