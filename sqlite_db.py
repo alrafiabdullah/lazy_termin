@@ -121,22 +121,31 @@ def subscriber_insert_query(conn, uni_email, telegram_id):
 
     return True
 
-def subscriber_update_query(conn, uni_email, telegram_id):
+def subscriber_update_query(conn, telegram_id, force=False):
     cur = conn.cursor()
     target_user = cur.execute(
-        "SELECT * FROM subscriber WHERE uni_email=? AND telegram_id=?",
-        (uni_email, telegram_id),
+        "SELECT * FROM subscriber WHERE telegram_id=?",
+        (telegram_id),
     ).fetchone()
 
     if target_user:
+        q = "UPDATE subscriber SET is_active=0 WHERE telegram_id=?"
+        if force:
+            cur.execute(
+                q,
+                (telegram_id,),
+            )
+            conn.commit()
+            return True
+
         right_now = datetime.now(TIMEZONE)
         end_date = datetime.strptime(target_user[2], TIME_FORMAT).astimezone(TIMEZONE)
 
         if right_now > end_date:
             # update is_active to 0
             cur.execute(
-                "UPDATE subscriber SET is_active=0 WHERE uni_email=? AND telegram_id=?",
-                (uni_email, telegram_id),
+                q,
+                (telegram_id),
             )
             conn.commit()
             return True
@@ -145,7 +154,7 @@ def subscriber_update_query(conn, uni_email, telegram_id):
 
 
 def get_subscriber_status(conn, uni_email, telegram_id):
-    subscriber_update_query(conn, uni_email, telegram_id)  # Update status if expired
+    subscriber_update_query(conn, telegram_id)  # Update status if expired
     cur = conn.cursor()
     cur.execute(
         "SELECT is_active FROM subscriber WHERE uni_email=? AND telegram_id=?",
