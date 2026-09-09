@@ -74,6 +74,16 @@ def get_earliest_expired_subscriber(conn):
     return days_left
 
 
+def get_active_subscribers(conn):
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT telegram_id FROM subscriber WHERE is_active=1"
+    )
+    data = cur.fetchall()
+    data = [row[0] for row in data]  # Extract telegram_id from each row
+    return data
+
+
 def check_active_subscriber_count(conn):
     cur = conn.cursor()
     cur.execute(
