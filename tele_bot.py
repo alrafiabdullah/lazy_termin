@@ -1,7 +1,7 @@
 import secrets
 from email.utils import parseaddr
 
-from telegram import Update
+from telegram import Bot, Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -15,12 +15,40 @@ from ses_em import send_ses_email
 from sqlite_db import (
     check_active_subscriber_count,
     create_connection,
+    get_active_subscribers,
     get_earliest_expired_subscriber,
     get_subscriber_status,
     subscriber_insert_query,
 )
-from utils_logger import ADMIN_ID, ALLOWED_DOMAINS, DB_FILE, TELEGRAM_BOT_TOKEN, logger
+from utils_logger import (
+    ADMIN_ID,
+    ALLOWED_DOMAINS,
+    DB_FILE,
+    TELEGRAM_BOT_TOKEN,
+    TERMIN_URL,
+    logger,
+)
 
+
+async def send_to_users(bot: Bot):
+    conn = create_connection(DB_FILE)
+    telegram_ids = get_active_subscribers(conn)
+    logger.debug(f"telegram_ids: {telegram_ids}")
+    message = (
+        "A new appointment is available! 🎉\n\n"
+        f"Please check {TERMIN_URL} for the appointment details "
+        "and take action if it is suitable for you."
+    )
+
+    for telegram_id in telegram_ids:
+        try:
+            await bot.send_message(
+                chat_id=telegram_id,
+                text=message,
+            )
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Failed to send message to {telegram_id}: {e}")
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the subscription conversation."""
