@@ -1,8 +1,9 @@
 import logging
 import os
+from datetime import timezone
 
 from dotenv import load_dotenv
-    
+
 load_dotenv(override=True)
 
 LOG_TO_TERMINAL = os.getenv("DEBUG").strip().lower() == "true"
@@ -33,3 +34,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MAXIMUM_ENTRIES = int(os.getenv("MAXIMUM_ENTRIES"))
 DB_FILE = os.getenv("DB_FILE")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ALLOWED_DOMAINS = os.getenv("ALLOWED_DOMAINS")
+
+TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+TIMEZONE = timezone.utc
