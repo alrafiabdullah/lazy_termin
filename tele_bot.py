@@ -53,6 +53,16 @@ async def send_to_users(bot: Bot):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
 
+
+async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Unsubscribe the user from notifications."""
+    user = update.effective_user
+    conn = create_connection(DB_FILE)
+    subscriber_update_query(conn, telegram_id=user.id, force=True)
+    await update.message.reply_text(
+        "You have been successfully unsubscribed from notifications."
+    )
+
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the subscription conversation."""
     subscriber_count = check_active_subscriber_count(conn)
@@ -202,6 +212,7 @@ def main() -> None:
 
     # on different commands - answer in Telegram
     application.add_handler(subscribe_conversation)
+    application.add_handler(CommandHandler("unsubscribe", unsubscribe))
     application.add_handler(CommandHandler("help", help_command))
 
     # on non command i.e message - echo the message on Telegram
