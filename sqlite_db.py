@@ -1,21 +1,37 @@
-import sqlite3
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from utils_logger import MAXIMUM_ENTRIES, TIME_FORMAT, TIMEZONE, logger
+import psycopg2
+
+from utils_logger import (
+    DB_HOST,
+    DB_NAME,
+    DB_PASSWORD,
+    DB_PORT,
+    DB_USER,
+    MAXIMUM_ENTRIES,
+    TIME_FORMAT,
+    TIMEZONE,
+    logger,
+)
 
 
-def create_connection(db_file):
-    """ create a database connection to the SQLite database specified by db_file
-    :param db_file: database file
+def create_connection():
+    """ create a database connection to the PostgreSQL database specified by db_name
+    :param db_name: database name
     :return: Connection object or None
     """
     conn = None
     try:
-        conn = sqlite3.connect(db_file)
+        conn = psycopg2.connect(dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT
+        )
         subscriber_schema(conn)
         return conn
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.error(f"Error creating database connection: {e}")
         raise str(e)
 
@@ -111,9 +127,9 @@ def subscriber_insert_query(conn, uni_email, telegram_id):
     start_date = start_datetime.strftime(TIME_FORMAT)
     end_date = (start_datetime + timedelta(days=5)).strftime(TIME_FORMAT)
 
-    query = """
+    query = f"""
     INSERT INTO subscriber (unique_id, uni_email, start_date, end_date, telegram_id, is_active)
-    VALUES (?, ?, ?, ?, ?, 1);
+    VALUES ('{unique_id}', '{uni_email}', '{start_date}', '{end_date}', {telegram_id}, 1);
     """
     cur = conn.cursor()
     cur.execute(query, (unique_id, uni_email, start_date, end_date, telegram_id))
@@ -124,16 +140,14 @@ def subscriber_insert_query(conn, uni_email, telegram_id):
 def subscriber_update_query(conn, telegram_id, force=False):
     cur = conn.cursor()
     target_user = cur.execute(
-        "SELECT * FROM subscriber WHERE telegram_id=?",
-        (telegram_id),
-    ).fetchone()
+        f"SELECT * FROM subscriber WHERE telegram_id={telegram_id}"
+    )
 
     if target_user:
-        q = "UPDATE subscriber SET is_active=0 WHERE telegram_id=?"
+        q = f"UPDATE subscriber SET is_active=0 WHERE telegram_id={telegram_id}"
         if force:
             cur.execute(
-                q,
-                (telegram_id,),
+                q
             )
             conn.commit()
             return True
@@ -144,8 +158,7 @@ def subscriber_update_query(conn, telegram_id, force=False):
         if right_now > end_date:
             # update is_active to 0
             cur.execute(
-                q,
-                (telegram_id),
+                q
             )
             conn.commit()
             return True
@@ -157,10 +170,13 @@ def get_subscriber_status(conn, uni_email, telegram_id):
     subscriber_update_query(conn, telegram_id)  # Update status if expired
     cur = conn.cursor()
     cur.execute(
-        "SELECT is_active FROM subscriber WHERE uni_email=? AND telegram_id=?",
-        (uni_email, telegram_id),
+        f"SELECT is_active FROM subscriber WHERE uni_email='{uni_email}' AND telegram_id={telegram_id}"
     )
     row = cur.fetchone()
     status = False if row is None else row[0] == 1
 
     return status
+
+
+conn = create_connection()  # Ensure the database and table are created when the module is imported
+subscriber_update_query(conn, 12345, True)
