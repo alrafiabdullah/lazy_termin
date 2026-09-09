@@ -13,6 +13,7 @@ def create_connection(db_file):
     conn = None
     try:
         conn = sqlite3.connect(db_file)
+        subscriber_schema(conn)
         return conn
     except sqlite3.Error as e:
         logger.error(f"Error creating database connection: {e}")
@@ -48,8 +49,7 @@ def delete_subscriber(conn, with_table=False):
 
     return True
 
-def subscriber_insert_query(conn, uni_email, telegram_id):
-    # get total active entries with email ending with @uni-trier.de
+def check_active_subscriber_count(conn):
     cur = conn.cursor()
     cur.execute(
         "SELECT COUNT(*) FROM subscriber WHERE uni_email LIKE ? AND is_active=1",
@@ -58,9 +58,14 @@ def subscriber_insert_query(conn, uni_email, telegram_id):
     total_active_entries = cur.fetchone()[0]
     if total_active_entries >= MAXIMUM_ENTRIES:
         logger.warning(
-            f"Maximum entries reached: {total_active_entries} active entries. Not inserting new entry for {uni_email}."
+            f"Maximum entries reached: {total_active_entries}/{MAXIMUM_ENTRIES} active entries."
         )
         return False  # Maximum entries reached, do not insert
+    return True 
+
+def subscriber_insert_query(conn, uni_email, telegram_id):
+    # get total active entries with email ending with @uni-trier.de
+    cur = conn.cursor()
 
     current_status = get_subscriber_status(conn, uni_email, telegram_id)
     if current_status:
@@ -105,6 +110,7 @@ def subscriber_update_query(conn, uni_email, telegram_id):
 
 
 def get_subscriber_status(conn, uni_email, telegram_id):
+    subscriber_update_query(conn, uni_email, telegram_id)  # Update status if expired
     cur = conn.cursor()
     cur.execute(
         "SELECT is_active FROM subscriber WHERE uni_email=? AND telegram_id=?",
