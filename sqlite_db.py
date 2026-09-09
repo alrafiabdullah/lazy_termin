@@ -38,7 +38,14 @@ def subscriber_schema(conn):
     conn.commit()
     return True
 
-def delete_subscriber(conn, with_table=False):
+def delete_subscriber(conn, id=None, with_table=False):
+    if id:
+        q = "DELETE FROM subscriber WHERE unique_id=?;"
+        cur = conn.cursor()
+        cur.execute(q, (id,))
+        conn.commit()
+        return True
+    
     q = "DELETE FROM subscriber;"
     if with_table:
         q = "DROP TABLE IF EXISTS subscriber;"
