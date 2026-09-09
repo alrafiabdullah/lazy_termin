@@ -30,10 +30,13 @@ EMAIL_IDS=
 TELEGRAM_BOT_TOKEN=
 MAXIMUM_ENTRIES=
 DEBUG=
+DB_FILE=
 ADMIN_ID=
+ALLOWED_DOMAINS=
 ```
 
 - `EMAIL_IDS` should contain a comma-separated list of recipient email addresses.
+- `ALLOWED_DOMAINS` should contain a comma-separated list of allowed email domains.
 - Set `DEBUG=False` to write logs to `app.log`; leave it as `True` to show logs in the terminal.
 - Find your `ADMIN_ID` by sending a message to your bot and checking the logs for the `user ID`.
 
@@ -50,6 +53,10 @@ ADMIN_ID=
 
    ```bash
    python main.py
+   ```
+5. Testing:
+   ```bash
+   python -m unittest tests.py -v
    ```
 
 ## How It Works
