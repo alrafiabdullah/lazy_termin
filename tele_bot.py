@@ -33,7 +33,11 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         )
         return ConversationHandler.END
     await update.message.reply_text(
-        "Please enter your name (first and last):"
+        "Welcome to the notification subscription!\n\n"
+        "Please note that your email address will be stored in our database for the purpose of sending you notifications."
+        "Your telegram ID will also be stored to ensure that you receive notifications only for your own account.\n\n"
+        "You can cancel the subscription process before it is completed at any time by typing /cancel.\n\n"
+        "If you agree to this, enter your name (first and last):"
     )
     return NAME
 
