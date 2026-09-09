@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import random
 import time
 
@@ -10,9 +11,11 @@ from selenium.common.exceptions import (
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from telegram.ext import Application
 
 from ses_em import get_email_addresses, send_ses_email
-from utils_logger import TERMIN_URL, logger
+from tele_bot import send_to_users
+from utils_logger import TELEGRAM_BOT_TOKEN, TERMIN_URL, logger
 
 
 def get_random_wait_time():
@@ -40,6 +43,9 @@ def setup_driver():
     driver = webdriver.Chrome(options=options)
     return driver
 
+async def tele_user():
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    await send_to_users(application.bot)
 
 def main():
     logger.info("Starting the application...")
@@ -113,7 +119,8 @@ def main():
         logger.info("A free appointment was found!")
 
         if USE_TELEGRAM:
-            print("A free appointment was found! Sending Telegram notification...")
+            logger.debug("A free appointment was found! Sending Telegram notification...")
+            asyncio.run(tele_user())
         else:
             email_addresses = get_email_addresses()
             for email in email_addresses:
