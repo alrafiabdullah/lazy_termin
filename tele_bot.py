@@ -11,6 +11,7 @@ from telegram.ext import (
     filters,
 )
 
+from ses_em import send_ses_email
 from sqlite_db import (
     check_active_subscriber_count,
     create_connection,
@@ -75,10 +76,12 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return EMAIL
 
     otp = f"{secrets.randbelow(1_000_000):06d}"
-    logger.info(f"Generated OTP for {email}: {otp}")
+    logger.debug(f"Generated OTP for {email}: {otp}")
 
     context.user_data["email"] = email
     context.user_data["otp"] = otp
+
+    send_ses_email(email, f"Email Verification Code for {user.username}", f"Your verification code is: {otp}", True)
 
     await update.message.reply_text(
         "I've sent a 6-digit verification code to your email.\n\n"
