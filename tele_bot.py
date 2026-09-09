@@ -24,7 +24,6 @@ from sqlite_db import (
 from utils_logger import (
     ADMIN_ID,
     ALLOWED_DOMAINS,
-    DB_FILE,
     TELEGRAM_BOT_TOKEN,
     TERMIN_URL,
     logger,
@@ -32,7 +31,7 @@ from utils_logger import (
 
 
 async def send_to_users(bot: Bot):
-    conn = create_connection(DB_FILE)
+    conn = create_connection()
     telegram_ids = get_active_subscribers(conn)
     logger.debug(f"telegram_ids: {telegram_ids}")
     message = (
@@ -57,7 +56,7 @@ async def send_to_users(bot: Bot):
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Unsubscribe the user from notifications."""
     user = update.effective_user
-    conn = create_connection(DB_FILE)
+    conn = create_connection()
     subscriber_update_query(conn, telegram_id=user.id, force=True)
     await update.message.reply_text(
         "You have been successfully unsubscribed from notifications."
@@ -223,7 +222,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    conn = create_connection(DB_FILE)
+    conn = create_connection()
     NAME, EMAIL, OTP, CONFIRM = range(4)
     subscribe_conversation = ConversationHandler(
         entry_points=[
