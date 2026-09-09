@@ -1,5 +1,5 @@
 boto3==1.43.62
 python-dotenv==1.2.2
-pysqlite3==0.6.0
+psycopg2-binary==2.9.12
 python-telegram-bot==22.8
 selenium==4.46.0
