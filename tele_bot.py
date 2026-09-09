@@ -19,6 +19,7 @@ from sqlite_db import (
     get_earliest_expired_subscriber,
     get_subscriber_status,
     subscriber_insert_query,
+    subscriber_update_query,
 )
 from utils_logger import (
     ADMIN_ID,
@@ -37,7 +38,8 @@ async def send_to_users(bot: Bot):
     message = (
         "A new appointment is available! 🎉\n\n"
         f"Please check {TERMIN_URL} for the appointment details "
-        "and take action if it is suitable for you."
+        "and take action if it is suitable for you.\n\n"
+        "You can unsubscribe from these notifications at any time by typing /unsubscribe."
     )
 
     for telegram_id in telegram_ids:
@@ -46,6 +48,7 @@ async def send_to_users(bot: Bot):
                 chat_id=telegram_id,
                 text=message,
             )
+            subscriber_update_query(conn, telegram_id)
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
