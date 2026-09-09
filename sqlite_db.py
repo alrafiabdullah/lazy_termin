@@ -1,8 +1,8 @@
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from uuid import uuid4
 
-from utils_logger import MAXIMUM_ENTRIES, logger
+from utils_logger import MAXIMUM_ENTRIES, TIME_FORMAT, TIMEZONE, logger
 
 
 def create_connection(db_file):
@@ -49,6 +49,24 @@ def delete_subscriber(conn, with_table=False):
 
     return True
 
+
+def get_earliest_expired_subscriber(conn):
+    cur = conn.cursor()
+    today = datetime.now(TIMEZONE).strftime(TIME_FORMAT)
+    cur.execute(
+        "SELECT * FROM subscriber WHERE is_active=1 AND end_date < ? ORDER BY end_date ASC LIMIT 1",
+        (today,),
+    )
+    data = cur.fetchone()
+    if not data:
+        return 5 # Return 5 days if no expired subscriber is found, as a default value
+    
+    days_left = datetime.strptime(data[3], TIME_FORMAT).astimezone() - today
+    days_left = days_left.days
+    logger.info(f"Earliest expired subscriber: {data[1]} (Telegram ID: {data[4]}), days left: {days_left}")
+    return days_left
+
+
 def check_active_subscriber_count(conn):
     cur = conn.cursor()
     cur.execute(
@@ -61,7 +79,7 @@ def check_active_subscriber_count(conn):
             f"Maximum entries reached: {total_active_entries}/{MAXIMUM_ENTRIES} active entries."
         )
         return False  # Maximum entries reached, do not insert
-    return True 
+    return True
 
 def subscriber_insert_query(conn, uni_email, telegram_id):
     # get total active entries with email ending with @uni-trier.de
@@ -72,9 +90,9 @@ def subscriber_insert_query(conn, uni_email, telegram_id):
         return False  # User is already active, no need to insert again
 
     unique_id = str(uuid4())
-    start_datetime = datetime.now(timezone.utc)
-    start_date = start_datetime.strftime("%Y-%m-%d %H:%M:%S")
-    end_date = (start_datetime + timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
+    start_datetime = datetime.now(TIMEZONE)
+    start_date = start_datetime.strftime(TIME_FORMAT)
+    end_date = (start_datetime + timedelta(days=5)).strftime(TIME_FORMAT)
 
     query = """
     INSERT INTO subscriber (unique_id, uni_email, start_date, end_date, telegram_id, is_active)
@@ -94,8 +112,8 @@ def subscriber_update_query(conn, uni_email, telegram_id):
     ).fetchone()
 
     if target_user:
-        right_now = datetime.now(timezone.utc)
-        end_date = datetime.strptime(target_user[2], "%Y-%m-%d %H:%M:%S").astimezone(timezone.utc)
+        right_now = datetime.now(TIMEZONE)
+        end_date = datetime.strptime(target_user[2], TIME_FORMAT).astimezone(TIMEZONE)
 
         if right_now > end_date:
             # update is_active to 0
