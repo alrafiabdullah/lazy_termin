@@ -2,8 +2,7 @@ name: Termin Cron
 
 on:
   schedule:
-    - cron: "10,40 6-12 * * 1-5"
-      timezone: "Europe/Berlin"
+    - cron: "10,40 4-10 * * 1-5"
   workflow_dispatch:
 
 jobs:
