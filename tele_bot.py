@@ -1,3 +1,4 @@
+import random
 import secrets
 from email.utils import parseaddr
 
@@ -21,15 +22,37 @@ from db_utils import (
     subscriber_update_query,
 )
 from ses_em import send_ses_email
-from tele_utils import send_message_to_admin
+from tele_utils import RANDOM_QUIRKY_MESSAGE_LIST, send_message_to_admin
 from utils_logger import (
     ADMIN_ID,
     ALLOWED_DOMAINS,
+    MAXIMUM_ENTRIES,
     TELEGRAM_BOT_TOKEN,
     TERMIN_URL,
     logger,
 )
 
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a message when the command /status is issued."""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        random_message = random.choice(RANDOM_QUIRKY_MESSAGE_LIST)
+        logger.warning(f"Unauthorized access attempt by user {user.username} ({user.id})")
+        await update.message.reply_text(random_message)
+        return
+
+    subscriber_count = check_active_subscriber_count(conn)
+    days_left = get_earliest_expired_subscriber(conn)
+
+    status_message = (
+        f"Active subscribers: {subscriber_count}\n"
+        f"Earliest expired subscriber in: {days_left} day(s)\n"
+        f"Maximum allowed entries: {MAXIMUM_ENTRIES}\n"
+        f"Allowed domains: {ALLOWED_DOMAINS}\n"
+        f"Termin URL: {TERMIN_URL}"
+    )
+    await update.message.reply_text(status_message)
 
 async def send_to_users(bot: Bot):
     telegram_ids = get_active_subscribers(conn)
@@ -196,6 +219,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Available commands:\n"
         "/subscribe - Subscribe to notifications\n"
         "/unsubscribe - Unsubscribe from notifications\n"
+        "/status - Check the status of the bot (admin only)\n"
         "/help - Show this help message\n"
     )
     await update.message.reply_text(help_message)
@@ -219,6 +243,7 @@ def main() -> None:
     # on different commands - answer in Telegram
     application.add_handler(subscribe_conversation)
     application.add_handler(CommandHandler("unsubscribe", unsubscribe))
+    application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("help", help_command))
 
     # on non command i.e message - echo the message on Telegram
