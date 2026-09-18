@@ -44,9 +44,9 @@ class SubscriberDatabaseTests(unittest.TestCase):
 		)
 
 		self.assertFalse(inserted_again)
-		with self.connection.cursor() as cursor:
-			cursor.execute("SELECT COUNT(*) FROM subscriber")
-			self.assertEqual(cursor.fetchone()[0], 1)
+		self.assertEqual(
+			db_utils.get_active_subscribers(self.connection), [12345]
+		)
 
 	def test_active_subscriber_count_rejects_when_limit_is_reached(self):
 		db_utils.subscriber_insert_query(self.connection, "first@uni-trier.de", 1)
@@ -62,28 +62,12 @@ class SubscriberDatabaseTests(unittest.TestCase):
 			self.assertTrue(db_utils.check_active_subscriber_count(self.connection))
 
 	def test_expired_subscriber_is_deactivated(self):
-		expired = datetime.now(timezone.utc) - timedelta(days=1)
-		with self.connection.cursor() as cursor:
-			cursor.execute(
-			"""
-			INSERT INTO subscriber
-				(unique_id, uni_email, start_date, end_date, telegram_id, is_active)
-			VALUES (%s, %s, %s, %s, %s, %s)
-			""",
-			(
-				"expired-id",
-				"student@uni-trier.de",
-				expired - timedelta(days=5),
-				expired,
-				12345,
-				True,
-			),
-			)
-		self.connection.commit()
+		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 12345)
+		future = datetime.now(timezone.utc) + timedelta(days=6)
 
-		updated = db_utils.subscriber_update_query(
-			self.connection, 12345
-		)
+		with patch.object(db_utils, "datetime") as datetime_mock:
+			datetime_mock.now.return_value = future
+			updated = db_utils.subscriber_update_query(self.connection, 12345)
 
 		self.assertTrue(updated)
 		self.assertFalse(
@@ -109,16 +93,10 @@ class SubscriberDatabaseTests(unittest.TestCase):
 
 		self.assertFalse(db_utils.subscriber_update_query(self.connection, 12345))
 
-	def test_delete_subscriber_by_id(self):
+	def test_delete_all_subscribers(self):
 		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 12345)
-		with self.connection.cursor() as cursor:
-			cursor.execute(
-				"SELECT unique_id FROM subscriber WHERE telegram_id = %s",
-				(12345,),
-			)
-			unique_id = cursor.fetchone()[0]
 
-		self.assertTrue(db_utils.delete_subscriber(self.connection, unique_id))
+		self.assertTrue(db_utils.delete_subscriber(self.connection))
 		self.assertFalse(
 			db_utils.get_subscriber_status(
 				self.connection, "student@uni-trier.de", 12345
@@ -131,6 +109,19 @@ class SubscriberDatabaseTests(unittest.TestCase):
 		db_utils.subscriber_update_query(self.connection, 2, force=True)
 
 		self.assertEqual(db_utils.get_active_subscribers(self.connection), [1])
+
+	def test_earliest_expired_subscriber_returns_default_without_active_rows(self):
+		self.assertEqual(
+			db_utils.get_earliest_expired_subscriber(self.connection), 5
+		)
+
+	def test_earliest_expired_subscriber_returns_days_until_earliest_end(self):
+		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 12345)
+
+		days_left = db_utils.get_earliest_expired_subscriber(self.connection)
+
+		self.assertGreaterEqual(days_left, 4)
+		self.assertLessEqual(days_left, 5)
 
 
 class NotificationTests(unittest.TestCase):
@@ -183,6 +174,40 @@ class NotificationTests(unittest.TestCase):
 
 
 class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
+	async def test_subscription_conversation_happy_path(self):
+		update = MagicMock()
+		update.effective_user.id = 12345
+		update.effective_user.username = "student"
+		update.message.reply_text = AsyncMock()
+		context = MagicMock()
+		context.user_data = {}
+
+		with patch.object(tele_bot, "conn", MagicMock(), create=True), \
+			patch.object(tele_bot, "NAME", 0, create=True), \
+			patch.object(tele_bot, "EMAIL", 1, create=True), \
+			patch.object(tele_bot, "OTP", 2, create=True), \
+			patch.object(tele_bot, "CONFIRM", 3, create=True), \
+			patch.object(tele_bot, "check_active_subscriber_count", return_value=True), \
+			patch.object(tele_bot, "get_subscriber_status", return_value=False), \
+			patch.object(tele_bot, "send_ses_email") as send_email, \
+			patch.object(tele_bot.secrets, "randbelow", return_value=123456), \
+			patch.object(tele_bot, "subscriber_insert_query", return_value=True):
+			self.assertEqual(await tele_bot.subscribe(update, context), 0)
+
+			update.message.text = "Ada Lovelace"
+			self.assertEqual(await tele_bot.get_name(update, context), 1)
+
+			update.message.text = "student@uni-trier.de"
+			self.assertEqual(await tele_bot.get_email(update, context), 2)
+			send_email.assert_called_once()
+
+			update.message.text = "123456"
+			self.assertEqual(await tele_bot.verify_otp(update, context), 3)
+
+			self.assertEqual(await tele_bot.confirm(update, context), -1)
+			self.assertEqual(context.user_data["name"], "Ada Lovelace")
+			self.assertEqual(context.user_data["email"], "student@uni-trier.de")
+
 	async def test_help_command_replies_with_available_commands(self):
 		update = MagicMock()
 		update.message.reply_text = AsyncMock()
