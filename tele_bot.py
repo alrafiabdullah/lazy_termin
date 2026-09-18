@@ -11,8 +11,7 @@ from telegram.ext import (
     filters,
 )
 
-from ses_em import send_ses_email
-from sqlite_db import (
+from db_utils import (
     check_active_subscriber_count,
     create_connection,
     get_active_subscribers,
@@ -21,6 +20,7 @@ from sqlite_db import (
     subscriber_insert_query,
     subscriber_update_query,
 )
+from ses_em import send_ses_email
 from tele_utils import send_message_to_admin
 from utils_logger import (
     ADMIN_ID,
@@ -32,7 +32,6 @@ from utils_logger import (
 
 
 async def send_to_users(bot: Bot):
-    conn = create_connection()
     telegram_ids = get_active_subscribers(conn)
     logger.debug(f"telegram_ids: {telegram_ids}")
     message = (
@@ -58,7 +57,6 @@ async def send_to_users(bot: Bot):
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Unsubscribe the user from notifications."""
     user = update.effective_user
-    conn = create_connection()
     subscriber_update_query(conn, telegram_id=user.id, force=True)
     await update.message.reply_text(
         "You have been successfully unsubscribed from notifications."
@@ -191,6 +189,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     help_message = (
         "Available commands:\n"
         "/subscribe - Subscribe to notifications\n"
+        "/unsubscribe - Unsubscribe from notifications\n"
         "/help - Show this help message\n"
     )
     await update.message.reply_text(help_message)
