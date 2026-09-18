@@ -21,6 +21,7 @@ from sqlite_db import (
     subscriber_insert_query,
     subscriber_update_query,
 )
+from tele_utils import send_message_to_admin
 from utils_logger import (
     ADMIN_ID,
     ALLOWED_DOMAINS,
@@ -51,6 +52,7 @@ async def send_to_users(bot: Bot):
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
+    await send_message_to_admin(bot, message=f"Appointment available, message sent to {len(telegram_ids)} users.")
 
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
