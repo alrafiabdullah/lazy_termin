@@ -57,6 +57,12 @@ async def send_to_users(bot: Bot):
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Unsubscribe the user from notifications."""
     user = update.effective_user
+    subscription_status = get_subscriber_status(conn, telegram_id=user.id)
+    if not subscription_status:
+        await update.message.reply_text(
+            "You are not currently subscribed to notifications."
+        )
+        return ConversationHandler.END
     subscriber_update_query(conn, telegram_id=user.id, force=True)
     await update.message.reply_text(
         "You have been successfully unsubscribed from notifications."
@@ -98,7 +104,7 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = email.lower()
 
     # Check if the user is already subscribed
-    if get_subscriber_status(conn,email, user.id):
+    if get_subscriber_status(conn, user.id):
         await update.message.reply_text(
             "You are already subscribed to notifications."
         )
