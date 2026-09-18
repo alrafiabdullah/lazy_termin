@@ -38,6 +38,7 @@ DEBUG=
 DB_FILE=
 ADMIN_ID=
 ALLOWED_DOMAINS=
+LOG_PATH=
 ```
 
 - `EMAIL_IDS` should contain a comma-separated list of recipient email addresses used by email notifications.
