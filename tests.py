@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,87 +7,130 @@ os.environ.setdefault("DEBUG", "True")
 os.environ.setdefault("MAXIMUM_ENTRIES", "10")
 os.environ.setdefault("ADMIN_ID", "1")
 
+import db_utils
 import main
 import ses_em
-import sqlite_db
 import tele_bot
 
 
 class SubscriberDatabaseTests(unittest.TestCase):
 	def setUp(self):
-		self.connection = sqlite3.connect(":memory:")
-		sqlite_db.subscriber_schema(self.connection)
+		self.connection = db_utils.create_connection()
+		db_utils.delete_subscriber(self.connection)
 
 	def tearDown(self):
+		db_utils.delete_subscriber(self.connection)
 		self.connection.close()
 
 	def test_insert_and_get_active_subscriber(self):
-		inserted = sqlite_db.subscriber_insert_query(
+		inserted = db_utils.subscriber_insert_query(
 			self.connection, "student@uni-trier.de", 12345
 		)
 
 		self.assertTrue(inserted)
 		self.assertTrue(
-			sqlite_db.get_subscriber_status(
+			db_utils.get_subscriber_status(
 				self.connection, "student@uni-trier.de", 12345
 			)
 		)
 
 	def test_duplicate_active_subscriber_is_not_inserted(self):
-		sqlite_db.subscriber_insert_query(
+		db_utils.subscriber_insert_query(
 			self.connection, "student@uni-trier.de", 12345
 		)
 
-		inserted_again = sqlite_db.subscriber_insert_query(
+		inserted_again = db_utils.subscriber_insert_query(
 			self.connection, "student@uni-trier.de", 12345
 		)
 
 		self.assertFalse(inserted_again)
-		self.assertEqual(
-			self.connection.execute("SELECT COUNT(*) FROM subscriber").fetchone()[0],
-			1,
-		)
+		with self.connection.cursor() as cursor:
+			cursor.execute("SELECT COUNT(*) FROM subscriber")
+			self.assertEqual(cursor.fetchone()[0], 1)
 
-	def test_insert_rejects_non_university_address_when_limit_is_reached(self):
-		with patch.object(sqlite_db, "MAXIMUM_ENTRIES", 1):
-			sqlite_db.subscriber_insert_query(
-				self.connection, "first@uni-trier.de", 1
-			)
-			inserted = sqlite_db.subscriber_insert_query(
-				self.connection, "second@example.com", 2
-			)
+	def test_active_subscriber_count_rejects_when_limit_is_reached(self):
+		db_utils.subscriber_insert_query(self.connection, "first@uni-trier.de", 1)
 
-		self.assertFalse(inserted)
+		with patch.object(db_utils, "MAXIMUM_ENTRIES", 1):
+			self.assertFalse(db_utils.check_active_subscriber_count(self.connection))
+
+	def test_active_subscriber_count_ignores_other_domains(self):
+		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 1)
+		db_utils.subscriber_insert_query(self.connection, "person@example.com", 2)
+
+		with patch.object(db_utils, "MAXIMUM_ENTRIES", 2):
+			self.assertTrue(db_utils.check_active_subscriber_count(self.connection))
 
 	def test_expired_subscriber_is_deactivated(self):
 		expired = datetime.now(timezone.utc) - timedelta(days=1)
-		self.connection.execute(
+		with self.connection.cursor() as cursor:
+			cursor.execute(
 			"""
 			INSERT INTO subscriber
 				(unique_id, uni_email, start_date, end_date, telegram_id, is_active)
-			VALUES (?, ?, ?, ?, ?, ?)
+			VALUES (%s, %s, %s, %s, %s, %s)
 			""",
 			(
 				"expired-id",
 				"student@uni-trier.de",
-				(expired - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S"),
-				expired.strftime("%Y-%m-%d %H:%M:%S"),
+				expired - timedelta(days=5),
+				expired,
 				12345,
-				1,
+				True,
 			),
-		)
+			)
 		self.connection.commit()
 
-		updated = sqlite_db.subscriber_update_query(
-			self.connection, "student@uni-trier.de", 12345
+		updated = db_utils.subscriber_update_query(
+			self.connection, 12345
 		)
 
 		self.assertTrue(updated)
 		self.assertFalse(
-			sqlite_db.get_subscriber_status(
+			db_utils.get_subscriber_status(
 				self.connection, "student@uni-trier.de", 12345
 			)
 		)
+
+	def test_force_update_deactivates_active_subscriber(self):
+		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 12345)
+
+		self.assertTrue(
+			db_utils.subscriber_update_query(self.connection, 12345, force=True)
+		)
+		self.assertFalse(
+			db_utils.get_subscriber_status(
+				self.connection, "student@uni-trier.de", 12345
+			)
+		)
+
+	def test_update_returns_false_for_non_expired_subscriber(self):
+		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 12345)
+
+		self.assertFalse(db_utils.subscriber_update_query(self.connection, 12345))
+
+	def test_delete_subscriber_by_id(self):
+		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 12345)
+		with self.connection.cursor() as cursor:
+			cursor.execute(
+				"SELECT unique_id FROM subscriber WHERE telegram_id = %s",
+				(12345,),
+			)
+			unique_id = cursor.fetchone()[0]
+
+		self.assertTrue(db_utils.delete_subscriber(self.connection, unique_id))
+		self.assertFalse(
+			db_utils.get_subscriber_status(
+				self.connection, "student@uni-trier.de", 12345
+			)
+		)
+
+	def test_get_active_subscribers_returns_only_active_ids(self):
+		db_utils.subscriber_insert_query(self.connection, "first@uni-trier.de", 1)
+		db_utils.subscriber_insert_query(self.connection, "second@uni-trier.de", 2)
+		db_utils.subscriber_update_query(self.connection, 2, force=True)
+
+		self.assertEqual(db_utils.get_active_subscribers(self.connection), [1])
 
 
 class NotificationTests(unittest.TestCase):
