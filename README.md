@@ -40,6 +40,8 @@ DB_USER=
 DB_PASSWORD=
 DB_HOST=
 DB_PORT=
+TEST_DB_USER=
+TEST_DB_PASSWORD=
 ADMIN_ID=
 ALLOWED_DOMAINS=
 LOG_PATH=
@@ -98,6 +100,9 @@ LOG_PATH=
    - Selenium click fallback behavior when a click is intercepted.
 
    The suite contains 19 tests and requires access to the configured PostgreSQL database.
+   Database tests always use a local PostgreSQL host. Set `TEST_DB_NAME`, `TEST_DB_USER`,
+   `TEST_DB_PASSWORD`, `TEST_DB_HOST`, and `TEST_DB_PORT` for a dedicated local test
+   database; `TEST_DB_HOST` defaults to `127.0.0.1` and `TEST_DB_PORT` defaults to `5432`.
 
 ## How It Works
 

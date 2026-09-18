@@ -14,6 +14,17 @@ import tele_bot
 
 
 class SubscriberDatabaseTests(unittest.TestCase):
+	@classmethod
+	def setUpClass(cls):
+		# Tests must never use the application's remote PostgreSQL settings.
+		db_utils.DB_HOST = os.getenv("TEST_DB_HOST", "127.0.0.1")
+		db_utils.DB_PORT = os.getenv("TEST_DB_PORT", "5432")
+		db_utils.DB_NAME = os.getenv("TEST_DB_NAME", db_utils.DB_NAME)
+		db_utils.DB_USER = os.getenv("TEST_DB_USER", db_utils.DB_USER)
+		db_utils.DB_PASSWORD = os.getenv("TEST_DB_PASSWORD", db_utils.DB_PASSWORD)
+		if db_utils.DB_HOST not in {"localhost", "127.0.0.1", "::1"}:
+			raise unittest.SkipTest("Database tests require a local PostgreSQL host")
+
 	def setUp(self):
 		self.connection = db_utils.create_connection()
 		db_utils.delete_subscriber(self.connection)
