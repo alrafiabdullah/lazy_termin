@@ -1,3 +1,4 @@
+import random
 import secrets
 from email.utils import parseaddr
 
@@ -11,8 +12,7 @@ from telegram.ext import (
     filters,
 )
 
-from ses_em import send_ses_email
-from sqlite_db import (
+from db_utils import (
     check_active_subscriber_count,
     create_connection,
     get_active_subscribers,
@@ -21,17 +21,40 @@ from sqlite_db import (
     subscriber_insert_query,
     subscriber_update_query,
 )
+from ses_em import send_ses_email
+from tele_utils import RANDOM_QUIRKY_MESSAGE_LIST, send_message_to_admin
 from utils_logger import (
     ADMIN_ID,
     ALLOWED_DOMAINS,
+    MAXIMUM_ENTRIES,
     TELEGRAM_BOT_TOKEN,
     TERMIN_URL,
     logger,
 )
 
 
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a message when the command /status is issued."""
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        random_message = random.choice(RANDOM_QUIRKY_MESSAGE_LIST)
+        logger.warning(f"Unauthorized access attempt by user {user.username} ({user.id})")
+        await update.message.reply_text(random_message)
+        return
+
+    subscriber_count = check_active_subscriber_count(conn)
+    days_left = get_earliest_expired_subscriber(conn)
+
+    status_message = (
+        f"Active subscribers: {subscriber_count}\n"
+        f"Earliest expired subscriber in: {days_left} day(s)\n"
+        f"Maximum allowed entries: {MAXIMUM_ENTRIES}\n"
+        f"Allowed domains: {ALLOWED_DOMAINS}\n"
+        f"Termin URL: {TERMIN_URL}"
+    )
+    await update.message.reply_text(status_message)
+
 async def send_to_users(bot: Bot):
-    conn = create_connection()
     telegram_ids = get_active_subscribers(conn)
     logger.debug(f"telegram_ids: {telegram_ids}")
     message = (
@@ -51,12 +74,18 @@ async def send_to_users(bot: Bot):
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
+    await send_message_to_admin(bot, message=f"Appointment available, message sent to {len(telegram_ids)} users.")
 
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Unsubscribe the user from notifications."""
     user = update.effective_user
-    conn = create_connection()
+    subscription_status = get_subscriber_status(conn, telegram_id=user.id)
+    if not subscription_status:
+        await update.message.reply_text(
+            "You are not currently subscribed to notifications."
+        )
+        return ConversationHandler.END
     subscriber_update_query(conn, telegram_id=user.id, force=True)
     await update.message.reply_text(
         "You have been successfully unsubscribed from notifications."
@@ -98,7 +127,7 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = email.lower()
 
     # Check if the user is already subscribed
-    if get_subscriber_status(conn,email, user.id):
+    if get_subscriber_status(conn, user.id):
         await update.message.reply_text(
             "You are already subscribed to notifications."
         )
@@ -189,6 +218,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     help_message = (
         "Available commands:\n"
         "/subscribe - Subscribe to notifications\n"
+        "/unsubscribe - Unsubscribe from notifications\n"
+        "/status - Check the status of the bot (admin only)\n"
         "/help - Show this help message\n"
     )
     await update.message.reply_text(help_message)
@@ -212,6 +243,7 @@ def main() -> None:
     # on different commands - answer in Telegram
     application.add_handler(subscribe_conversation)
     application.add_handler(CommandHandler("unsubscribe", unsubscribe))
+    application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("help", help_command))
 
     # on non command i.e message - echo the message on Telegram

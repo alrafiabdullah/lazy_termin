@@ -134,7 +134,7 @@ def check_active_subscriber_count(conn):
     return True
 
 def subscriber_insert_query(conn, uni_email, telegram_id):
-    current_status = get_subscriber_status(conn, uni_email, telegram_id)
+    current_status = get_subscriber_status(conn, telegram_id)
     if current_status:
         return False  # User is already active, no need to insert again
 
@@ -178,16 +178,16 @@ def subscriber_update_query(conn, telegram_id, force=False):
     return False
 
 
-def get_subscriber_status(conn, uni_email, telegram_id):
+def get_subscriber_status(conn, telegram_id):
     subscriber_update_query(conn, telegram_id)  # Update status if expired
     cur = conn.cursor()
     cur.execute(
         """
         SELECT is_active
         FROM subscriber
-        WHERE uni_email = %s AND telegram_id = %s
+        WHERE telegram_id = %s
         """,
-        (uni_email, telegram_id),
+        (telegram_id,),
     )
     row = cur.fetchone()
     status = False if row is None else row[0] == 1
