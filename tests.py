@@ -30,7 +30,7 @@ class SubscriberDatabaseTests(unittest.TestCase):
 		self.assertTrue(inserted)
 		self.assertTrue(
 			db_utils.get_subscriber_status(
-				self.connection, "student@uni-trier.de", 12345
+				self.connection, 12345
 			)
 		)
 
@@ -72,7 +72,7 @@ class SubscriberDatabaseTests(unittest.TestCase):
 		self.assertTrue(updated)
 		self.assertFalse(
 			db_utils.get_subscriber_status(
-				self.connection, "student@uni-trier.de", 12345
+				self.connection, 12345
 			)
 		)
 
@@ -84,7 +84,7 @@ class SubscriberDatabaseTests(unittest.TestCase):
 		)
 		self.assertFalse(
 			db_utils.get_subscriber_status(
-				self.connection, "student@uni-trier.de", 12345
+				self.connection, 12345
 			)
 		)
 
@@ -99,7 +99,7 @@ class SubscriberDatabaseTests(unittest.TestCase):
 		self.assertTrue(db_utils.delete_subscriber(self.connection))
 		self.assertFalse(
 			db_utils.get_subscriber_status(
-				self.connection, "student@uni-trier.de", 12345
+				self.connection, 12345
 			)
 		)
 
