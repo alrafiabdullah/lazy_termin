@@ -14,6 +14,17 @@ import tele_bot
 
 
 class SubscriberDatabaseTests(unittest.TestCase):
+	@classmethod
+	def setUpClass(cls):
+		# Tests must never use the application's remote PostgreSQL settings.
+		db_utils.DB_HOST = os.getenv("TEST_DB_HOST", "127.0.0.1")
+		db_utils.DB_PORT = os.getenv("TEST_DB_PORT", "5432")
+		db_utils.DB_NAME = os.getenv("TEST_DB_NAME", db_utils.DB_NAME)
+		db_utils.DB_USER = os.getenv("TEST_DB_USER", db_utils.DB_USER)
+		db_utils.DB_PASSWORD = os.getenv("TEST_DB_PASSWORD", db_utils.DB_PASSWORD)
+		if db_utils.DB_HOST not in {"localhost", "127.0.0.1", "::1"}:
+			raise unittest.SkipTest("Database tests require a local PostgreSQL host")
+
 	def setUp(self):
 		self.connection = db_utils.create_connection()
 		db_utils.delete_subscriber(self.connection)
@@ -52,14 +63,16 @@ class SubscriberDatabaseTests(unittest.TestCase):
 		db_utils.subscriber_insert_query(self.connection, "first@uni-trier.de", 1)
 
 		with patch.object(db_utils, "MAXIMUM_ENTRIES", 1):
-			self.assertFalse(db_utils.check_active_subscriber_count(self.connection))
+			status, _ = db_utils.check_active_subscriber_count(self.connection)
+			self.assertFalse(status)
 
 	def test_active_subscriber_count_ignores_other_domains(self):
 		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 1)
 		db_utils.subscriber_insert_query(self.connection, "person@example.com", 2)
 
 		with patch.object(db_utils, "MAXIMUM_ENTRIES", 2):
-			self.assertTrue(db_utils.check_active_subscriber_count(self.connection))
+			status, _ = db_utils.check_active_subscriber_count(self.connection)
+			self.assertTrue(status)
 
 	def test_expired_subscriber_is_deactivated(self):
 		db_utils.subscriber_insert_query(self.connection, "student@uni-trier.de", 12345)
@@ -187,7 +200,7 @@ class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
 			patch.object(tele_bot, "EMAIL", 1, create=True), \
 			patch.object(tele_bot, "OTP", 2, create=True), \
 			patch.object(tele_bot, "CONFIRM", 3, create=True), \
-			patch.object(tele_bot, "check_active_subscriber_count", return_value=True), \
+			patch.object(tele_bot, "check_active_subscriber_count", return_value=(True, 0)), \
 			patch.object(tele_bot, "get_subscriber_status", return_value=False), \
 			patch.object(tele_bot, "send_ses_email") as send_email, \
 			patch.object(tele_bot.secrets, "randbelow", return_value=123456), \

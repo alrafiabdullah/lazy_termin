@@ -34,7 +34,7 @@ def create_connection():
         return conn
     except psycopg2.Error as e:
         logger.error(f"Error creating database connection: {e}")
-        raise str(e)
+        raise
 
 def subscriber_schema(conn):
     """ create a database schema for the subscriber table
@@ -130,8 +130,8 @@ def check_active_subscriber_count(conn):
         logger.warning(
             f"Maximum entries reached: {total_active_entries}/{MAXIMUM_ENTRIES} active entries."
         )
-        return False  # Maximum entries reached, do not insert
-    return True
+        return False, total_active_entries  # Maximum entries reached, do not insert
+    return True, total_active_entries 
 
 def subscriber_insert_query(conn, uni_email, telegram_id):
     current_status = get_subscriber_status(conn, telegram_id)
