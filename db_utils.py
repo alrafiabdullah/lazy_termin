@@ -34,7 +34,7 @@ def create_connection():
         return conn
     except psycopg2.Error as e:
         logger.error(f"Error creating database connection: {e}")
-        raise str(e)
+        raise
 
 def subscriber_schema(conn):
     """ create a database schema for the subscriber table
