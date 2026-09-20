@@ -42,7 +42,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(random_message)
         return
 
-    subscriber_count = check_active_subscriber_count(conn)
+    _, subscriber_count = check_active_subscriber_count(conn)
     days_left = get_earliest_expired_subscriber(conn)
 
     status_message = (
@@ -93,7 +93,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the subscription conversation."""
-    subscriber_count = check_active_subscriber_count(conn)
+    subscriber_count, _ = check_active_subscriber_count(conn)
     if not subscriber_count:
         days_left = get_earliest_expired_subscriber(conn)
         await update.message.reply_text(
