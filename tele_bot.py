@@ -195,8 +195,9 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
     await update.message.reply_text(
         "Welcome to the notification subscription!\n\n"
-        "Please note that your email address will be stored in our database for the purpose of sending you notifications."
-        "Your telegram ID will also be stored to ensure that you receive notifications only for your own account.\n\n"
+        "To provide this service, we store your university email address and Telegram ID, so we can send OTP/appointment notifications to your account.\n\n"
+        "For service statistics, we also store the timestamp, Telegram ID, update ID, and type of incoming messages. We do not store message contents.\n\n"
+        "Your data is processed only for these purposes and should be handled according to applicable EU data-protection rules, including the GDPR. You can unsubscribe at any time by typing /unsubscribe.\n\n"
         "You can cancel the subscription process before it is completed at any time by typing /cancel.\n\n"
         "If you agree to this, enter your name (first and last):"
     )
