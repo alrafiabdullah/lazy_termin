@@ -153,6 +153,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     await update.message.reply_text(
         "You have been successfully unsubscribed from notifications."
     )
+    return ConversationHandler.END
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the subscription conversation."""
@@ -332,21 +333,21 @@ def main() -> None:
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
+USER_COMMANDS = {
+    "subscribe": ("Subscribe to notifications", subscribe),
+    "unsubscribe": ("Unsubscribe from notifications", unsubscribe),
+    "status": ("Check your status", user_status),
+    "help": ("Show available commands", help_command),
+}
+
+ADMIN_COMMANDS = {
+    **USER_COMMANDS,
+    "astatus": ("Show admin status", admin_status),
+}
+
 if __name__ == "__main__":
     initialize_pool()
     NAME, EMAIL, OTP, CONFIRM = range(4)
-
-    USER_COMMANDS = {
-        "subscribe": ("Subscribe to notifications", subscribe),
-        "unsubscribe": ("Unsubscribe from notifications", unsubscribe),
-        "status": ("Check your status", user_status),
-        "help": ("Show available commands", help_command),
-    }
-
-    ADMIN_COMMANDS = {
-        **USER_COMMANDS,
-        "astatus": ("Show admin status", admin_status),
-    }
 
     subscribe_conversation = ConversationHandler(
         entry_points=[
