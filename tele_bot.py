@@ -1,6 +1,7 @@
 import random
 import secrets
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from email.utils import parseaddr
 
 from telegram import Bot, BotCommand, Update
@@ -10,6 +11,7 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -19,8 +21,10 @@ from db_utils import (
     get_active_subscribers,
     get_connection,
     get_earliest_expired_subscriber,
+    get_message_stats,
     get_subscriber_status,
     initialize_pool,
+    record_message_event,
     release_connection,
     subscriber_insert_query,
     subscriber_update_query,
@@ -51,6 +55,24 @@ def db_connection():
         release_connection(connection)
 
 
+async def track_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Record incoming message metadata without storing message contents."""
+    user = update.effective_user
+    message = update.effective_message
+    if user is None or message is None:
+        return
+
+    message_text = getattr(message, "text", None) or getattr(message, "caption", None)
+    message_type = "command" if message_text and message_text.startswith("/") else "message"
+    with db_connection() as connection:
+        record_message_event(
+            connection,
+            telegram_id=user.id,
+            update_id=update.update_id,
+            message_type=message_type,
+        )
+
+
 async def admin_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /status is issued."""
     user = update.effective_user
@@ -63,13 +85,17 @@ async def admin_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     with db_connection() as connection:
         _, subscriber_count = check_active_subscriber_count(connection)
         days_left = get_earliest_expired_subscriber(connection)
+        message_count, user_count = get_message_stats(
+            connection, datetime.now(timezone.utc) - timedelta(hours=24)
+        )
 
     status_message = (
         f"Active subscribers: {subscriber_count}\n"
         f"Earliest expired subscriber in: {days_left} day(s)\n"
         f"Maximum allowed entries: {MAXIMUM_ENTRIES}\n"
         f"Allowed domains: {ALLOWED_DOMAINS}\n"
-        f"Termin URL: {TERMIN_URL}"
+        f"Termin URL: {TERMIN_URL}\n"
+        f"Messages received (24h): {message_count} from {user_count} users"
     )
     await update.message.reply_text(status_message)
 
@@ -319,6 +345,7 @@ def main() -> None:
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
+    application.add_handler(TypeHandler(Update, track_update), group=-1)
     # on different commands - answer in Telegram
     application.add_handler(subscribe_conversation)
     application.add_handler(CommandHandler("unsubscribe", unsubscribe))
