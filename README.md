@@ -100,13 +100,18 @@ LOG_PATH=
    - Email recipient parsing, email body generation, SES sending, and missing credentials.
    - Telegram subscription flow from `/subscribe` through name entry, email verification, OTP verification, and confirmation.
    - Telegram unsubscription for both subscribed and non-subscribed users.
-   - Telegram help, admin-message, and pooled database connection handlers.
+   - Telegram help, admin-message, message telemetry, and pooled database connection handlers.
    - Selenium click fallback behavior when a click is intercepted.
 
-   The suite contains 21 tests and requires access to a local PostgreSQL database.
+   The suite contains 22 tests and requires access to a local PostgreSQL database.
    Set `TEST_DB_NAME`, `TEST_DB_USER`, `TEST_DB_PASSWORD`, `TEST_DB_HOST`, and
    `TEST_DB_PORT` for a dedicated local test database. `TEST_DB_HOST` defaults to
    `127.0.0.1` and `TEST_DB_PORT` defaults to `5432`; non-local hosts are rejected.
+
+   Incoming Telegram messages are tracked in PostgreSQL without storing their contents.
+   The bot records the UTC timestamp, Telegram user ID, update ID, and whether the update
+   was a command or regular message. Admins can view the previous 24-hour message and
+   unique-user counts with `/astatus`.
 
 ## How It Works
 
