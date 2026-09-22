@@ -108,8 +108,49 @@ def subscriber_schema(conn):
     """
     cur = conn.cursor()
     cur.execute(subscriber_schema)
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS telegram_message_event (
+            event_id BIGSERIAL PRIMARY KEY,
+            telegram_update_id BIGINT UNIQUE,
+            telegram_id BIGINT NOT NULL,
+            received_at TIMESTAMPTZ NOT NULL,
+            message_type TEXT NOT NULL
+        );
+        """
+    )
     conn.commit()
     return True
+
+
+def record_message_event(conn, telegram_id, update_id, message_type):
+    """Record message metadata without storing message contents."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO telegram_message_event
+            (telegram_update_id, telegram_id, received_at, message_type)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (telegram_update_id) DO NOTHING
+        """,
+        (update_id, telegram_id, datetime.now(TIMEZONE), message_type),
+    )
+    conn.commit()
+
+
+def get_message_stats(conn, since):
+    """Return message count and unique-user count since a UTC timestamp."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT COUNT(*), COUNT(DISTINCT telegram_id)
+        FROM telegram_message_event
+        WHERE received_at >= %s
+        """,
+        (since,),
+    )
+    message_count, user_count = cur.fetchone()
+    return message_count, user_count
 
 def delete_subscriber(conn, id=None, with_table=False):
     if id:
