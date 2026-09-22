@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from telegram.ext import Application
 
 from ses_em import get_email_addresses, send_ses_email
-from tele_bot import send_to_users
+from tele_bot import send_to_users, unsubscribe_user
 from utils_logger import TELEGRAM_BOT_TOKEN, TERMIN_URL, logger
 
 
@@ -46,6 +46,10 @@ def setup_driver():
 async def tele_user():
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     await send_to_users(application.bot)
+
+async def unsubscribe_tele_user():
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    await unsubscribe_user(application.bot)
 
 def main():
     logger.info("Starting the application...")
@@ -131,6 +135,9 @@ def main():
             logger.info(f"Email notifications sent to {len(email_addresses)} recipient(s).")
     else:
         logger.info("No free appointments found.")
+
+    if USE_TELEGRAM:
+        asyncio.run(unsubscribe_tele_user())
 
     logger.info("Application finished.")
 
