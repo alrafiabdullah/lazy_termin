@@ -1,7 +1,7 @@
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 os.environ.setdefault("DEBUG", "True")
 os.environ.setdefault("MAXIMUM_ENTRIES", "10")
@@ -200,6 +200,42 @@ class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
 
 		get_connection.assert_called_once_with()
 		release_connection.assert_called_once_with(borrowed_connection)
+
+	async def test_unsubscribe_deactivates_subscribed_user(self):
+		update = MagicMock()
+		update.effective_user.id = 12345
+		update.message.reply_text = AsyncMock()
+
+		with patch.object(tele_bot, "get_connection", return_value=MagicMock()), \
+			patch.object(tele_bot, "release_connection"), \
+			patch.object(tele_bot, "get_subscriber_status", return_value=True), \
+			patch.object(tele_bot, "subscriber_update_query") as update_subscriber:
+			result = await tele_bot.unsubscribe(update, MagicMock())
+
+		self.assertEqual(result, tele_bot.ConversationHandler.END)
+		update_subscriber.assert_called_once_with(
+			ANY, telegram_id=12345, force=True
+		)
+		update.message.reply_text.assert_awaited_once_with(
+			"You have been successfully unsubscribed from notifications."
+		)
+
+	async def test_unsubscribe_rejects_user_without_subscription(self):
+		update = MagicMock()
+		update.effective_user.id = 12345
+		update.message.reply_text = AsyncMock()
+
+		with patch.object(tele_bot, "get_connection", return_value=MagicMock()), \
+			patch.object(tele_bot, "release_connection"), \
+			patch.object(tele_bot, "get_subscriber_status", return_value=False), \
+			patch.object(tele_bot, "subscriber_update_query") as update_subscriber:
+			result = await tele_bot.unsubscribe(update, MagicMock())
+
+		self.assertEqual(result, tele_bot.ConversationHandler.END)
+		update_subscriber.assert_not_called()
+		update.message.reply_text.assert_awaited_once_with(
+			"You are not currently subscribed to notifications."
+		)
 
 	async def test_subscription_conversation_happy_path(self):
 		update = MagicMock()
