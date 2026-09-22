@@ -187,6 +187,20 @@ class NotificationTests(unittest.TestCase):
 
 
 class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
+	def test_db_connection_returns_connection_to_pool(self):
+		borrowed_connection = MagicMock()
+		borrowed_connection.closed = 0
+
+		with patch.object(
+			tele_bot, "get_connection", return_value=borrowed_connection
+		) as get_connection, patch.object(
+			tele_bot, "release_connection"
+		) as release_connection, tele_bot.db_connection() as connection:
+			self.assertIs(connection, borrowed_connection)
+
+		get_connection.assert_called_once_with()
+		release_connection.assert_called_once_with(borrowed_connection)
+
 	async def test_subscription_conversation_happy_path(self):
 		update = MagicMock()
 		update.effective_user.id = 12345
@@ -195,7 +209,8 @@ class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
 		context = MagicMock()
 		context.user_data = {}
 
-		with patch.object(tele_bot, "conn", MagicMock(), create=True), \
+		with patch.object(tele_bot, "get_connection", return_value=MagicMock()), \
+			patch.object(tele_bot, "release_connection"), \
 			patch.object(tele_bot, "NAME", 0, create=True), \
 			patch.object(tele_bot, "EMAIL", 1, create=True), \
 			patch.object(tele_bot, "OTP", 2, create=True), \
