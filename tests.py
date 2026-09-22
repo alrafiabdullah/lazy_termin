@@ -187,6 +187,25 @@ class NotificationTests(unittest.TestCase):
 
 
 class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
+	async def test_track_update_records_message_metadata(self):
+		update = MagicMock()
+		update.update_id = 77
+		update.effective_user.id = 12345
+		update.effective_message.text = "hello"
+		connection = MagicMock()
+
+		with patch.object(tele_bot, "get_connection", return_value=connection), \
+			patch.object(tele_bot, "release_connection"), \
+			patch.object(tele_bot, "record_message_event") as record_event:
+			await tele_bot.track_update(update, MagicMock())
+
+		record_event.assert_called_once_with(
+			connection,
+			telegram_id=12345,
+			update_id=77,
+			message_type="message",
+		)
+
 	def test_db_connection_returns_connection_to_pool(self):
 		borrowed_connection = MagicMock()
 		borrowed_connection.closed = 0
