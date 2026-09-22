@@ -95,7 +95,7 @@ async def admin_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"Maximum allowed entries: {MAXIMUM_ENTRIES}\n"
         f"Allowed domains: {ALLOWED_DOMAINS}\n"
         f"Termin URL: {TERMIN_URL}\n"
-        f"Messages received (24h): {message_count} from {user_count} users"
+        f"Messages received (24h): {message_count} from {user_count} user(s)"
     )
     await update.message.reply_text(status_message)
 
@@ -135,7 +135,7 @@ async def send_to_users(bot: Bot):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
     if len(telegram_ids) > 0:
-        await send_message_to_admin(bot, message=f"Appointment available, message sent to {successful_sends}/{len(telegram_ids)} users.")
+        await send_message_to_admin(bot, message=f"Appointment available, message sent to {successful_sends}/{len(telegram_ids)} user(s).")
 
 
 async def unsubscribe_user(bot: Bot):
@@ -161,7 +161,7 @@ async def unsubscribe_user(bot: Bot):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
     if user_expired:
-        await send_message_to_admin(bot, message=f"Subscription expired, message sent to {update_counter} users.")
+        await send_message_to_admin(bot, message=f"Subscription expired, message sent to {update_counter} user(s).")
 
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
