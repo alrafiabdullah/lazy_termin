@@ -83,7 +83,7 @@ async def user_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         f"- Hello {user.username}!\n"
         f"- Your Telegram ID: {user.id}\n"
         f"- You are currently {'subscribed' if is_subscribed else 'not subscribed'} to notifications.\n"
-        f"- You can subscribe by typing /subscribe and unsubscribe by typing /unsubscribe.\n"
+        f"- You can {'subscribe' if not is_subscribed else 'unsubscribe'} by typing /{'subscribe' if not is_subscribed else 'unsubscribe'}.\n"
     )
     await update.message.reply_text(status_message)
 
