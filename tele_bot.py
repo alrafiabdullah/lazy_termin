@@ -98,18 +98,44 @@ async def send_to_users(bot: Bot):
         "You can unsubscribe from these notifications at any time by typing /unsubscribe."
     )
 
+    successful_sends = 0
     for telegram_id in telegram_ids:
         try:
             await bot.send_message(
                 chat_id=telegram_id,
                 text=message,
             )
-            with db_connection() as connection:
-                subscriber_update_query(connection, telegram_id)
-
+            successful_sends += 1
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
-    await send_message_to_admin(bot, message=f"Appointment available, message sent to {len(telegram_ids)} users.")
+    if len(telegram_ids) > 0:
+        await send_message_to_admin(bot, message=f"Appointment available, message sent to {successful_sends}/{len(telegram_ids)} users.")
+
+
+async def unsubscribe_user(bot: Bot):
+    with db_connection() as connection:
+        telegram_ids = get_active_subscribers(connection)
+    logger.debug(f"telegram_ids: {telegram_ids}")
+    message = (
+        "Your subscription has been expired. You can re-subscribe by typing /subscribe."
+    )
+
+    update_counter = 0
+    user_expired = False
+    for telegram_id in telegram_ids:
+        try:
+            update_status = subscriber_update_query(connection, telegram_id)
+            if update_status:
+                user_expired = True
+                update_counter += 1
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=message,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Failed to send message to {telegram_id}: {e}")
+    if user_expired:
+        await send_message_to_admin(bot, message=f"Subscription expired, message sent to {update_counter} users.")
 
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
