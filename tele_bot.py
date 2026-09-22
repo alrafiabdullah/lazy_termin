@@ -3,7 +3,7 @@ import secrets
 from contextlib import contextmanager
 from email.utils import parseaddr
 
-from telegram import Bot, Update
+from telegram import Bot, BotCommand, Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -257,13 +257,14 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
     # make the help message dynamic based on the available commands
-    help_message = (
-        "Available commands:\n"
-        "/subscribe - Subscribe to notifications\n"
-        "/unsubscribe - Unsubscribe from notifications\n"
-        "/status - Check the status of the bot (admin only)\n"
-        "/help - Show this help message\n"
-    )
+    help_message = "Available commands:\n"
+    for command, (description, _) in USER_COMMANDS.items():
+        help_message += f"/{command} - {description}\n"
+    if update.effective_user.id == ADMIN_ID:
+        help_message += "\nAdmin commands:\n"
+        for command, (description, _) in ADMIN_COMMANDS.items():
+            if command not in USER_COMMANDS:
+                help_message += f"/{command} - {description}\n"
     await update.message.reply_text(help_message)
 
 
@@ -277,10 +278,19 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(msg)
 
 
+async def post_init(application: Application) -> None:
+    commands = [
+        BotCommand(command, description)
+        for command, (description, _) in ADMIN_COMMANDS.items()
+    ]
+
+    await application.bot.set_my_commands(commands)
+
+
 def main() -> None:
     """Start the bot."""
     # Create the Application and pass it your bot's token.
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
     # on different commands - answer in Telegram
     application.add_handler(subscribe_conversation)
@@ -299,6 +309,19 @@ def main() -> None:
 if __name__ == "__main__":
     initialize_pool()
     NAME, EMAIL, OTP, CONFIRM = range(4)
+
+    USER_COMMANDS = {
+        "subscribe": ("Subscribe to notifications", subscribe),
+        "unsubscribe": ("Unsubscribe from notifications", unsubscribe),
+        "status": ("Check your status", user_status),
+        "help": ("Show available commands", help_command),
+    }
+
+    ADMIN_COMMANDS = {
+        **USER_COMMANDS,
+        "astatus": ("Show admin status", admin_status),
+    }
+
     subscribe_conversation = ConversationHandler(
         entry_points=[
             CommandHandler("subscribe", subscribe)
