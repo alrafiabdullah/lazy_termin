@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import psycopg2
+from psycopg2.pool import ThreadedConnectionPool
 
 from utils_logger import (
     ALLOWED_DOMAINS,
@@ -15,6 +16,8 @@ from utils_logger import (
     TIMEZONE,
     logger,
 )
+
+connection_pool = None
 
 
 def create_connection():
@@ -35,6 +38,59 @@ def create_connection():
     except psycopg2.Error as e:
         logger.error(f"Error creating database connection: {e}")
         raise
+
+
+def initialize_pool(min_connections=1, max_connections=10):
+    """Initialize the PostgreSQL connection pool and create the schema."""
+    global connection_pool
+
+    if connection_pool is not None:
+        return
+
+    connection_pool = ThreadedConnectionPool(
+        minconn=min_connections,
+        maxconn=max_connections,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+    )
+    connection = connection_pool.getconn()
+    try:
+        subscriber_schema(connection)
+    finally:
+        connection_pool.putconn(connection)
+
+
+def get_connection():
+    """Borrow a healthy connection from the pool."""
+    if connection_pool is None:
+        initialize_pool()
+
+    connection = connection_pool.getconn()
+    if connection.closed:
+        connection_pool.putconn(connection, close=True)
+        connection = connection_pool.getconn()
+    return connection
+
+
+def release_connection(connection):
+    """Return a connection to the pool, discarding closed connections."""
+    if connection_pool is None:
+        connection.close()
+        return
+
+    connection_pool.putconn(connection, close=bool(connection.closed))
+
+
+def close_pool():
+    """Close all connections managed by the pool."""
+    global connection_pool
+
+    if connection_pool is not None:
+        connection_pool.closeall()
+        connection_pool = None
 
 def subscriber_schema(conn):
     """ create a database schema for the subscriber table

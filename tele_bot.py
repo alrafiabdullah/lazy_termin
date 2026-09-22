@@ -1,5 +1,6 @@
 import random
 import secrets
+from contextlib import contextmanager
 from email.utils import parseaddr
 
 from telegram import Bot, Update
@@ -14,10 +15,13 @@ from telegram.ext import (
 
 from db_utils import (
     check_active_subscriber_count,
-    create_connection,
+    close_pool,
     get_active_subscribers,
+    get_connection,
     get_earliest_expired_subscriber,
     get_subscriber_status,
+    initialize_pool,
+    release_connection,
     subscriber_insert_query,
     subscriber_update_query,
 )
@@ -33,15 +37,18 @@ from utils_logger import (
 )
 
 
-def get_db_connection():
-    """Return the bot connection, reconnecting after PostgreSQL closes it."""
-    global conn
-
-    current_connection = globals().get("conn")
-    is_closed = isinstance(getattr(current_connection, "closed", None), int) and current_connection.closed != 0
-    if current_connection is None or is_closed:
-        conn = create_connection()
-    return conn
+@contextmanager
+def db_connection():
+    """Borrow a PostgreSQL connection for one database operation."""
+    connection = get_connection()
+    try:
+        yield connection
+    except Exception:
+        if not connection.closed:
+            connection.rollback()
+        raise
+    finally:
+        release_connection(connection)
 
 
 async def admin_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -53,9 +60,9 @@ async def admin_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(random_message)
         return
 
-    connection = get_db_connection()
-    _, subscriber_count = check_active_subscriber_count(connection)
-    days_left = get_earliest_expired_subscriber(connection)
+    with db_connection() as connection:
+        _, subscriber_count = check_active_subscriber_count(connection)
+        days_left = get_earliest_expired_subscriber(connection)
 
     status_message = (
         f"Active subscribers: {subscriber_count}\n"
@@ -70,18 +77,19 @@ async def user_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """Send a message when the command /status is issued."""
     user = update.effective_user
     
-    connection = get_db_connection()
+    with db_connection() as connection:
+        is_subscribed = get_subscriber_status(connection, user.id)
     status_message = (
         f"- Hello {user.username}!\n"
         f"- Your Telegram ID: {user.id}\n"
-        f"- You are currently {'subscribed' if get_subscriber_status(connection, user.id) else 'not subscribed'} to notifications.\n"
+        f"- You are currently {'subscribed' if is_subscribed else 'not subscribed'} to notifications.\n"
         f"- You can subscribe by typing /subscribe and unsubscribe by typing /unsubscribe.\n"
     )
     await update.message.reply_text(status_message)
 
 async def send_to_users(bot: Bot):
-    connection = get_db_connection()
-    telegram_ids = get_active_subscribers(connection)
+    with db_connection() as connection:
+        telegram_ids = get_active_subscribers(connection)
     logger.debug(f"telegram_ids: {telegram_ids}")
     message = (
         "A new appointment is available! 🎉\n\n"
@@ -96,7 +104,8 @@ async def send_to_users(bot: Bot):
                 chat_id=telegram_id,
                 text=message,
             )
-            subscriber_update_query(connection, telegram_id)
+            with db_connection() as connection:
+                subscriber_update_query(connection, telegram_id)
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
@@ -106,24 +115,26 @@ async def send_to_users(bot: Bot):
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Unsubscribe the user from notifications."""
     user = update.effective_user
-    connection = get_db_connection()
-    subscription_status = get_subscriber_status(connection, telegram_id=user.id)
+    with db_connection() as connection:
+        subscription_status = get_subscriber_status(connection, telegram_id=user.id)
     if not subscription_status:
         await update.message.reply_text(
             "You are not currently subscribed to notifications."
         )
         return ConversationHandler.END
-    subscriber_update_query(connection, telegram_id=user.id, force=True)
+    with db_connection() as connection:
+        subscriber_update_query(connection, telegram_id=user.id, force=True)
     await update.message.reply_text(
         "You have been successfully unsubscribed from notifications."
     )
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the subscription conversation."""
-    connection = get_db_connection()
-    subscriber_count, _ = check_active_subscriber_count(connection)
+    with db_connection() as connection:
+        subscriber_count, _ = check_active_subscriber_count(connection)
     if not subscriber_count:
-        days_left = get_earliest_expired_subscriber(connection)
+        with db_connection() as connection:
+            days_left = get_earliest_expired_subscriber(connection)
         await update.message.reply_text(
             "Sorry, the maximum number of active subscribers has been reached. "
             f"Please try again {'tomorrow' if days_left < 1 else f'in {days_left} day(s)'}."
@@ -155,7 +166,9 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = email.lower()
 
     # Check if the user is already subscribed
-    if get_subscriber_status(get_db_connection(), user.id):
+    with db_connection() as connection:
+        is_subscribed = get_subscriber_status(connection, user.id)
+    if is_subscribed:
         await update.message.reply_text(
             "You are already subscribed to notifications."
         )
@@ -217,7 +230,8 @@ async def confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     email = context.user_data["email"]
 
     # Insert the new subscriber into the database
-    inserted = subscriber_insert_query(get_db_connection(), email, user.id)
+    with db_connection() as connection:
+        inserted = subscriber_insert_query(connection, email, user.id)
     if inserted:
         logger.info(f"User {user.username} ({user.id}) has confirmed subscription.")
         await update.message.reply_text(
@@ -283,7 +297,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    conn = create_connection()
+    initialize_pool()
     NAME, EMAIL, OTP, CONFIRM = range(4)
     subscribe_conversation = ConversationHandler(
         entry_points=[
@@ -319,4 +333,7 @@ if __name__ == "__main__":
         ],
     )
 
-    main()
+    try:
+        main()
+    finally:
+        close_pool()
