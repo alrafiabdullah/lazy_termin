@@ -135,6 +135,17 @@ This repository also includes a GitHub Actions workflow for running the checker 
 - This repository is intended as a general automation template for appointment availability checks.
 - If you do not need a configuration set in SES, you can leave `AWS_SES_CONFIGURATION_SET` blank.
 
+## Legal and Responsible Use
+
+This project is an appointment-availability monitoring tool. It is intended to check publicly accessible appointment information using the normal website flow and to notify users when availability is detected.
+
+Users are responsible for complying with the terms of use, acceptable-use policies, and applicable laws governing the appointment website they monitor. The software must not be used to bypass authentication, CAPTCHA, rate limits, access controls, or other technical security measures, and must not generate traffic that interferes with the availability or operation of the target service.
+
+The project does not automatically book appointments. Users should complete the appointment process themselves through the official government website.
+
+When operating the notification component, operators should collect only the personal data necessary for the notification service, protect stored data appropriately, and delete subscriber data when it is no longer required.
+
+
 ## Credits
 
 Built and maintained by Abdullah Al Rafi.
