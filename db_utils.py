@@ -170,23 +170,52 @@ def delete_subscriber(conn, id=None, with_table=False):
     return True
 
 
-def get_earliest_expired_subscriber(conn):
+def get_latest_subscriber_row(conn, telegram_id):
     cur = conn.cursor()
     cur.execute(
         """
         SELECT *
-        FROM subscriber
-                WHERE is_active = TRUE
+        FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY telegram_id
+                       ORDER BY start_date DESC, end_date DESC, unique_id DESC
+                   ) AS rn
+            FROM subscriber
+            WHERE telegram_id = %s
+        ) ranked
+        WHERE rn = 1
+        """,
+        (telegram_id,),
+    )
+    return cur.fetchone()
+
+
+def get_earliest_expired_subscriber(conn):
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT end_date
+        FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY telegram_id
+                       ORDER BY start_date DESC, end_date DESC, unique_id DESC
+                   ) AS rn
+            FROM subscriber
+        ) ranked
+        WHERE rn = 1
+          AND is_active = TRUE
         ORDER BY end_date ASC
         LIMIT 1
         """
     )
     data = cur.fetchone()
-    
+
     if data is None:
         return 5
 
-    end_date = data[3]
+    end_date = data[0]
     if isinstance(end_date, str):
         end_date = datetime.strptime(end_date, TIME_FORMAT).replace(tzinfo=TIMEZONE)
     days_left = (end_date - datetime.now(TIMEZONE)).days
@@ -197,12 +226,22 @@ def get_earliest_expired_subscriber(conn):
 def get_active_subscribers(conn):
     cur = conn.cursor()
     cur.execute(
-        "SELECT telegram_id FROM subscriber WHERE is_active = TRUE"
+        """
+        SELECT telegram_id
+        FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY telegram_id
+                       ORDER BY start_date DESC, end_date DESC, unique_id DESC
+                   ) AS rn
+            FROM subscriber
+        ) ranked
+        WHERE rn = 1
+          AND is_active = TRUE
+        """
     )
     data = cur.fetchall()
-    data = [row[0] for row in data]  # Extract telegram_id from each row
-    
-    return data
+    return [row[0] for row in data]
 
 
 def check_active_subscriber_count(conn):
@@ -212,12 +251,20 @@ def check_active_subscriber_count(conn):
         for domain in ALLOWED_DOMAINS.split(",")
         if domain.strip()
     ]
-    
+
     cur.execute(
         """
         SELECT COUNT(*)
-        FROM subscriber
-        WHERE is_active = TRUE
+        FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY telegram_id
+                       ORDER BY start_date DESC, end_date DESC, unique_id DESC
+                   ) AS rn
+            FROM subscriber
+        ) ranked
+        WHERE rn = 1
+          AND is_active = TRUE
           AND LOWER(TRIM(SPLIT_PART(uni_email, '@', 2))) = ANY(%s)
         """,
         (allowed_domain_list,),
@@ -227,8 +274,8 @@ def check_active_subscriber_count(conn):
         logger.warning(
             f"Maximum entries reached: {total_active_entries}/{MAXIMUM_ENTRIES} active entries."
         )
-        return False, total_active_entries  # Maximum entries reached, do not insert
-    return True, total_active_entries 
+        return False, total_active_entries
+    return True, total_active_entries
 
 def subscriber_insert_query(conn, uni_email, telegram_id):
     current_status = get_subscriber_status(conn, telegram_id)
@@ -252,23 +299,34 @@ def subscriber_insert_query(conn, uni_email, telegram_id):
 def subscriber_update_query(conn, telegram_id, force=False):
     cur = conn.cursor()
     cur.execute(
-        "SELECT * FROM subscriber WHERE telegram_id = %s",
+        """
+        SELECT unique_id, end_date
+        FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY telegram_id
+                       ORDER BY start_date DESC, end_date DESC, unique_id DESC
+                   ) AS rn
+            FROM subscriber
+            WHERE telegram_id = %s
+        ) ranked
+        WHERE rn = 1
+        """,
         (telegram_id,),
     )
     target_user = cur.fetchone()
 
     if target_user:
-        q = "UPDATE subscriber SET is_active = FALSE WHERE telegram_id = %s"
+        unique_id, end_date = target_user
+        q = "UPDATE subscriber SET is_active = FALSE WHERE unique_id = %s"
         if force:
-            cur.execute(q, (telegram_id,))
+            cur.execute(q, (unique_id,))
             conn.commit()
             return True
 
         right_now = datetime.now(TIMEZONE)
-        end_date = target_user[3]
-
         if right_now > end_date:
-            cur.execute(q, (telegram_id,))
+            cur.execute(q, (unique_id,))
             conn.commit()
             return True
 
@@ -276,13 +334,21 @@ def subscriber_update_query(conn, telegram_id, force=False):
 
 
 def get_subscriber_status(conn, telegram_id):
-    subscriber_update_query(conn, telegram_id)  # Update status if expired
+    subscriber_update_query(conn, telegram_id)  # Update only the latest record if expired
     cur = conn.cursor()
     cur.execute(
         """
         SELECT is_active
-        FROM subscriber
-        WHERE telegram_id = %s
+        FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY telegram_id
+                       ORDER BY start_date DESC, end_date DESC, unique_id DESC
+                   ) AS rn
+            FROM subscriber
+            WHERE telegram_id = %s
+        ) ranked
+        WHERE rn = 1
         """,
         (telegram_id,),
     )
