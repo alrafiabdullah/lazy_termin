@@ -59,6 +59,31 @@ class SubscriberDatabaseTests(unittest.TestCase):
 			db_utils.get_active_subscribers(self.connection), [12345]
 		)
 
+	def test_latest_subscription_entry_controls_status(self):
+		old_record = """
+			INSERT INTO subscriber
+				(unique_id, uni_email, start_date, end_date, telegram_id, is_active)
+			VALUES (%s, %s, %s, %s, %s, TRUE)
+		"""
+		new_record = """
+			INSERT INTO subscriber
+				(unique_id, uni_email, start_date, end_date, telegram_id, is_active)
+			VALUES (%s, %s, %s, %s, %s, FALSE)
+		"""
+
+		older_start = datetime.now(timezone.utc) - timedelta(days=10)
+		older_end = datetime.now(timezone.utc) + timedelta(days=2)
+		newer_start = datetime.now(timezone.utc) - timedelta(hours=1)
+		newer_end = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+		with self.connection.cursor() as cur:
+			cur.execute(old_record, ("old-entry", "old@uni-trier.de", older_start, older_end, 99999))
+			cur.execute(new_record, ("new-entry", "new@uni-trier.de", newer_start, newer_end, 99999))
+		self.connection.commit()
+
+		self.assertFalse(db_utils.get_subscriber_status(self.connection, 99999))
+		self.assertEqual(db_utils.get_active_subscribers(self.connection), [])
+
 	def test_active_subscriber_count_rejects_when_limit_is_reached(self):
 		db_utils.subscriber_insert_query(self.connection, "first@uni-trier.de", 1)
 
