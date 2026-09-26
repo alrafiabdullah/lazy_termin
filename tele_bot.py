@@ -105,8 +105,11 @@ async def user_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     
     with db_connection() as connection:
         is_subscribed = get_subscriber_status(connection, user.id)
+
+    user_name = f" {user.username}" if user.username else ""
+
     status_message = (
-        f"- Hello {user.username}!\n"
+        f"- Hello{user_name}!\n"
         f"- Your Telegram ID: {user.id}\n"
         f"- You are currently {'subscribed' if is_subscribed else 'not subscribed'} to notifications.\n"
         f"- You can {'subscribe' if not is_subscribed else 'unsubscribe'} by typing /{'subscribe' if not is_subscribed else 'unsubscribe'}.\n"
