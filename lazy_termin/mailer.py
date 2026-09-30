@@ -3,7 +3,8 @@ import os
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
-from utils_logger import SENDER, TERMIN_URL, logger
+from .config import SENDER, TERMIN_URL
+from .log import logger
 
 
 def get_email_addresses():
