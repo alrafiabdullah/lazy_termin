@@ -1,0 +1,11 @@
+.env
+.git
+.github
+.vscode
+__pycache__
+logs
+*.log
+*.db
+temp.sh
+deploy
+*.md
