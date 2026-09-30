@@ -52,4 +52,4 @@ jobs:
           ALLOWED_DOMAINS: ${{ secrets.ALLOWED_DOMAINS }}
 
         run: |
-          python main.py
+          python -m lazy_termin.scraper
