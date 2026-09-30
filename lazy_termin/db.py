@@ -2,9 +2,10 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import psycopg2
+from psycopg2.extras import Json
 from psycopg2.pool import ThreadedConnectionPool
 
-from utils_logger import (
+from .config import (
     ALLOWED_DOMAINS,
     DB_HOST,
     DB_NAME,
@@ -14,8 +15,8 @@ from utils_logger import (
     MAXIMUM_ENTRIES,
     TIME_FORMAT,
     TIMEZONE,
-    logger,
 )
+from .log import logger
 
 connection_pool = None
 
@@ -119,8 +120,128 @@ def subscriber_schema(conn):
         );
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS notification_outbox (
+            id BIGSERIAL PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            payload JSONB NOT NULL DEFAULT '{}',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            status TEXT NOT NULL DEFAULT 'pending',
+            attempts INT NOT NULL DEFAULT 0,
+            claimed_at TIMESTAMPTZ NULL,
+            processed_at TIMESTAMPTZ NULL,
+            last_error TEXT NULL
+        );
+        CREATE INDEX IF NOT EXISTS notification_outbox_status_created_at_idx
+            ON notification_outbox (status, created_at);
+        """
+    )
     conn.commit()
     return True
+
+
+def insert_outbox_event(conn, event_type, payload, cooldown_minutes):
+    """Insert an outbox event unless one of the same type exists inside the cooldown.
+    :return: True if a row was inserted
+    """
+    with conn:
+        cur = conn.cursor()
+        # Serialise concurrent inserts so the dedup check cannot race.
+        cur.execute("LOCK TABLE notification_outbox IN SHARE ROW EXCLUSIVE MODE")
+        cur.execute(
+            """
+            INSERT INTO notification_outbox (event_type, payload)
+            SELECT %s, %s
+            WHERE NOT EXISTS (
+                SELECT 1 FROM notification_outbox
+                WHERE event_type = %s
+                  AND status IN ('pending', 'processing', 'sent')
+                  AND created_at > now() - make_interval(mins => %s)
+            )
+            """,
+            (event_type, Json(payload), event_type, cooldown_minutes),
+        )
+        inserted = cur.rowcount == 1
+        if inserted:
+            cur.execute("NOTIFY notification_outbox")
+    return inserted
+
+
+def claim_outbox_events(conn, limit=10):
+    """Mark up to `limit` pending events as processing and return (id, event_type, payload, attempts)."""
+    with conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE notification_outbox
+            SET status = 'processing', attempts = attempts + 1, claimed_at = now()
+            WHERE id IN (
+                SELECT id FROM notification_outbox
+                WHERE status = 'pending'
+                ORDER BY created_at
+                FOR UPDATE SKIP LOCKED
+                LIMIT %s
+            )
+            RETURNING id, event_type, payload, attempts
+            """,
+            (limit,),
+        )
+        return sorted(cur.fetchall())
+
+
+def mark_outbox_sent(conn, event_id):
+    with conn:
+        conn.cursor().execute(
+            "UPDATE notification_outbox SET status = 'sent', processed_at = now() WHERE id = %s",
+            (event_id,),
+        )
+
+
+def mark_outbox_error(conn, event_id, error, max_attempts=3):
+    """Record a send error; return the new status ('pending' to retry, or 'failed')."""
+    with conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE notification_outbox
+            SET last_error = %s,
+                status = CASE WHEN attempts < %s THEN 'pending' ELSE 'failed' END,
+                processed_at = CASE WHEN attempts < %s THEN NULL ELSE now() END
+            WHERE id = %s
+            RETURNING status
+            """,
+            (str(error)[:500], max_attempts, max_attempts, event_id),
+        )
+        return cur.fetchone()[0]
+
+
+def reset_stuck_outbox_events(conn, minutes=10):
+    """Return events stuck in processing (e.g. after a crash mid-send) to pending."""
+    with conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE notification_outbox SET status = 'pending'
+            WHERE status = 'processing' AND claimed_at < now() - make_interval(mins => %s)
+            """,
+            (minutes,),
+        )
+        return cur.rowcount
+
+
+def delete_old_rows(conn, days=30):
+    """Delete outbox and message-event rows older than `days`."""
+    with conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM notification_outbox WHERE created_at < now() - make_interval(days => %s)",
+            (days,),
+        )
+        cur.execute(
+            "DELETE FROM telegram_message_event WHERE received_at < now() - make_interval(days => %s)",
+            (days,),
+        )
 
 
 def record_message_event(conn, telegram_id, update_id, message_type):
