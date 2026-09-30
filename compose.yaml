@@ -1,0 +1,32 @@
+x-app: &app
+  build: .
+  image: lazy_termin
+  env_file: .env
+  volumes:
+    - ./logs:/app/logs
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  scraper:
+    <<: *app
+    command: supercronic /app/crontab
+    init: true
+    mem_limit: 1g
+    environment:
+      LOG_PATH: /app/logs/scraper.log
+
+  bot:
+    <<: *app
+    command: python -m lazy_termin.bot
+    mem_limit: 256m
+    environment:
+      LOG_PATH: /app/logs/bot.log
+    healthcheck:
+      test: ["CMD-SHELL", "find /tmp/bot_heartbeat -mmin -3 | grep -q ."]
+      interval: 60s
+      start_period: 60s
