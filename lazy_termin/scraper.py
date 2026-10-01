@@ -13,7 +13,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from .config import ALERT_COOLDOWN_MINUTES, TERMIN_URL
+from .config import TERMIN_URL
 from .db import create_connection, insert_outbox_event
 from .log import logger
 from .mailer import get_email_addresses, send_ses_email
@@ -50,15 +50,13 @@ def setup_driver():
 
 
 def queue_appointment_alert(heading):
-    """Queue an alert in the outbox; the bot delivers it to subscribers."""
+    """Queue an alert in the outbox; the bot decides which subscribers receive it."""
     with closing(create_connection()) as connection:
-        inserted = insert_outbox_event(
-            connection, "APPOINTMENT_FOUND", {"heading": heading}, ALERT_COOLDOWN_MINUTES
-        )
+        inserted = insert_outbox_event(connection, "APPOINTMENT_FOUND", {"heading": heading})
     if inserted:
         logger.info("Appointment alert queued in the outbox.")
     else:
-        logger.info(f"Alert skipped: one was queued within the last {ALERT_COOLDOWN_MINUTES} minutes.")
+        logger.info("Alert skipped: one is already pending.")
 
 
 def run_booking_flow(driver, use_email):

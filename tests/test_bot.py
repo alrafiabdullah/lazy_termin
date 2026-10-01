@@ -1,7 +1,10 @@
 import unittest
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
-from lazy_termin import bot
+from telegram.error import Forbidden
+
+from lazy_termin import bot, db
+from tests import use_local_test_database
 
 
 class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
@@ -118,7 +121,7 @@ class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
 			patch.object(bot, "mark_outbox_sent") as mark_sent:
 			await bot.dispatch_outbox(context)
 
-		send_to_users.assert_awaited_once_with(context.bot)
+		send_to_users.assert_awaited_once_with(context.bot, 7)
 		mark_sent.assert_called_once_with(ANY, 7)
 
 	async def test_dispatch_outbox_alerts_admin_when_event_fails(self):
@@ -185,6 +188,122 @@ class TelegramHandlerTests(unittest.IsolatedAsyncioTestCase):
 		update.message.reply_text.assert_awaited_once_with(
 			"maintenance\n\n[Admin Message]"
 		)
+
+
+class AlertDeliveryTests(unittest.IsolatedAsyncioTestCase):
+	"""Outbox dispatch against the local test database, with Telegram mocked."""
+
+	@classmethod
+	def setUpClass(cls):
+		use_local_test_database()
+
+	def setUp(self):
+		self.connection = db.create_connection()
+		self._clear()
+		self.fake_bot = MagicMock()
+		self.fake_bot.send_message = AsyncMock()
+		self.context = MagicMock(bot=self.fake_bot)
+		for patcher in (
+			patch.object(bot, "get_connection", return_value=self.connection),
+			patch.object(bot, "release_connection"),
+			patch.object(bot, "ALERT_COOLDOWN_MINUTES", 60),
+			patch.object(bot, "SEND_PAUSE_SECONDS", 0),
+		):
+			patcher.start()
+			self.addCleanup(patcher.stop)
+
+	def tearDown(self):
+		self._clear()
+		self.connection.close()
+
+	def _clear(self):
+		with self.connection, self.connection.cursor() as cur:
+			cur.execute("DELETE FROM notification_outbox")
+		db.delete_subscriber(self.connection)
+
+	def _subscribe(self, *telegram_ids):
+		for telegram_id in telegram_ids:
+			db.subscriber_insert_query(self.connection, f"user{telegram_id}@uni-trier.de", telegram_id)
+
+	def _alerted(self):
+		calls = self.fake_bot.send_message.await_args_list
+		return sorted(call.kwargs["chat_id"] for call in calls if call.kwargs["chat_id"] != bot.ADMIN_ID)
+
+	def _admin_messages(self):
+		calls = self.fake_bot.send_message.await_args_list
+		return [call.kwargs["text"] for call in calls if call.kwargs["chat_id"] == bot.ADMIN_ID]
+
+	def _query(self, sql):
+		with self.connection, self.connection.cursor() as cur:
+			cur.execute(sql)
+			return cur.fetchall()
+
+	async def _scrape_and_dispatch(self):
+		"""Queue an alert as the scraper does, dispatch it, and return who was alerted."""
+		self.fake_bot.send_message.reset_mock()
+		self.assertTrue(db.insert_outbox_event(self.connection, "APPOINTMENT_FOUND", {}))
+		await bot.dispatch_outbox(self.context)
+		self.assertEqual(self._query("SELECT DISTINCT status FROM notification_outbox"), [("sent",)])
+		return self._alerted()
+
+	def _advance_minutes(self, minutes):
+		self._query(
+			f"UPDATE alert_delivery SET sent_at = sent_at - interval '{minutes} minutes' RETURNING 1"
+		)
+
+	async def test_behaviour_table_with_new_subscriber(self):
+		a, x = 1001, 1002
+		self._subscribe(a)
+		alerted = {"10:00": await self._scrape_and_dispatch()}
+		self._subscribe(x)  # X subscribes at 10:05.
+		for scrape in ("10:15", "10:30", "10:45", "11:00", "11:15"):
+			self._advance_minutes(15)
+			alerted[scrape] = await self._scrape_and_dispatch()
+
+		self.assertEqual(
+			alerted,
+			{"10:00": [a], "10:15": [x], "10:30": [], "10:45": [], "11:00": [a], "11:15": [x]},
+		)
+
+	async def test_retry_after_crash_only_reaches_users_not_yet_alerted(self):
+		self._subscribe(1001, 1002, 1003)
+		db.insert_outbox_event(self.connection, "APPOINTMENT_FOUND", {})
+		(event_id, *_), = db.claim_outbox_events(self.connection)
+		# The bot crashed after alerting two of the three users.
+		db.record_alert_delivery(self.connection, event_id, 1001)
+		db.record_alert_delivery(self.connection, event_id, 1002)
+		self._query("UPDATE notification_outbox SET claimed_at = now() - interval '11 minutes' RETURNING 1")
+		self.assertEqual(db.reset_stuck_outbox_events(self.connection), 1)
+
+		await bot.dispatch_outbox(self.context)
+
+		self.assertEqual(self._alerted(), [1003])
+		self.assertEqual(self._query("SELECT status FROM notification_outbox"), [("sent",)])
+
+	async def test_blocked_user_gets_no_delivery_row_and_event_is_sent(self):
+		self._subscribe(1001, 1002)
+
+		async def send_message(chat_id, text):
+			if chat_id == 1001:
+				raise Forbidden("Forbidden: bot was blocked by the user")
+
+		self.fake_bot.send_message.side_effect = send_message
+		await self._scrape_and_dispatch()
+
+		self.assertEqual(self._query("SELECT telegram_id FROM alert_delivery"), [(1002,)])
+		self.assertEqual(db.get_alert_recipients(self.connection, 60), [1001])
+		self.assertEqual(
+			self._admin_messages(),
+			["Appointment available, message sent to 1/2 eligible user(s); 0 skipped (alerted within cooldown)."],
+		)
+
+	async def test_no_admin_summary_when_nobody_is_eligible(self):
+		self._subscribe(1001)
+		await self._scrape_and_dispatch()
+
+		self.assertEqual(await self._scrape_and_dispatch(), [])
+		self.fake_bot.send_message.assert_not_awaited()
+
 
 
 if __name__ == "__main__":
