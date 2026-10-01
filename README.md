@@ -33,8 +33,9 @@ cp .env.example .env
 - `ALLOWED_DOMAINS` should contain a comma-separated list of allowed email domains for Telegram subscriptions.
 - `MAXIMUM_ENTRIES` limits the number of active `@uni-trier.de` subscriptions.
 - `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, and `DB_PORT` configure the PostgreSQL database used for subscriptions.
-- Set `DEBUG=False` to write `INFO` and higher logs to `app.log`. The file rotates every seven days and keeps five archived files. Set it to `True` to enable debug logs in the terminal.
-- `ALERT_COOLDOWN_MINUTES` (default 60) stops a new appointment alert from being queued while another one was queued within that many minutes.
+- Set `DEBUG=False` to write `INFO` and higher logs to files in `LOG_DIR` (default `./logs`): the scraper writes `scraper.log` and the bot writes `bot.log`. Each file rotates every seven days and keeps five archived files. Set `DEBUG=True` to enable debug logs in the terminal instead.
+- With Docker Compose, `LOG_DIR` is the folder on the host; it is mounted into both containers.
+- `ALERT_COOLDOWN_MINUTES` (default 60, minimum 2) is the minimum number of minutes between alerts to the same subscriber. The bot reads it; a new subscriber gets the next alert even if others were alerted recently.
 - Find your `ADMIN_ID` by sending a message to your bot and checking the logs for the user ID.
 
 ## Setup
@@ -81,11 +82,12 @@ cp .env.example .env
    - Telegram subscription flow from `/subscribe` through name entry, email verification, OTP verification, and confirmation.
    - Telegram unsubscription for both subscribed and non-subscribed users.
    - Telegram help, admin-message, message telemetry, and pooled database connection handlers.
-   - Notification outbox: cooldown deduplication, claiming with `SKIP LOCKED`, retry until `failed` after three attempts, and stuck-row recovery.
+   - Notification outbox: skipping a new alert while one is pending, claiming with `SKIP LOCKED`, retry until `failed` after three attempts, stuck-row recovery, and deleting delivery records with old alerts.
+   - Per-subscriber alert cooldown: recipient selection with the 1-minute grace, a new subscriber alerted on the next scrape, retries that skip users already alerted, blocked users, and no admin summary when nobody is eligible.
    - Outbox dispatcher, subscription expiry on a single database connection, and rate-limit retry.
    - Selenium click fallback behavior when a click is intercepted, and `driver.quit()` on early return or error.
 
-   The suite contains 35 tests and requires access to a local PostgreSQL database.
+   The suite contains 41 tests and requires access to a local PostgreSQL database.
    Set `TEST_DB_NAME`, `TEST_DB_USER`, `TEST_DB_PASSWORD`, `TEST_DB_HOST`, and
    `TEST_DB_PORT` for a dedicated local test database. `TEST_DB_HOST` defaults to
    `127.0.0.1` and `TEST_DB_PORT` defaults to `5432`; non-local hosts are rejected.
@@ -118,8 +120,8 @@ lazy_termin/
 ## How It Works
 
 1. The checker (`lazy_termin/scraper.py`) opens the configured booking page and goes through the booking flow with Selenium.
-2. If a free appointment is found, it inserts an `APPOINTMENT_FOUND` row into the `notification_outbox` table and sends `NOTIFY notification_outbox`. With `--use_email`, it emails every address in `EMAIL_IDS` instead.
-3. The bot (`lazy_termin/bot.py`) wakes on the `NOTIFY`, or polls every 20 seconds, claims pending rows, and messages every active subscriber. A failed row is retried up to three times, then marked `failed` and reported to the admin.
+2. If a free appointment is found, it inserts an `APPOINTMENT_FOUND` row into the `notification_outbox` table, unless one is still waiting to be sent, and sends `NOTIFY notification_outbox`. With `--use_email`, it emails every address in `EMAIL_IDS` instead.
+3. The bot (`lazy_termin/bot.py`) wakes on the `NOTIFY`, or polls every 20 seconds, claims pending rows, and messages every active subscriber who has not been alerted within `ALERT_COOLDOWN_MINUTES`. Each delivery is recorded in the `alert_delivery` table, so a subscriber gets at most one alert per cooldown and a retried row skips users already alerted. A failed row is retried up to three times, then marked `failed` and reported to the admin.
 4. The bot also runs its own jobs: subscription expiry every 15 minutes, deletion of outbox and message-event rows older than 30 days at 03:00 UTC, and a heartbeat file for the Docker health check.
 5. Subscriber records are stored in PostgreSQL and expire after five days.
 
