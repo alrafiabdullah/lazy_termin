@@ -1,22 +1,15 @@
-import os
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from lazy_termin import db
+from tests import use_local_test_database
 
 
 class SubscriberDatabaseTests(unittest.TestCase):
 	@classmethod
 	def setUpClass(cls):
-		# Tests must never use the application's remote PostgreSQL settings.
-		db.DB_HOST = os.getenv("TEST_DB_HOST", "127.0.0.1")
-		db.DB_PORT = os.getenv("TEST_DB_PORT", "5432")
-		db.DB_NAME = os.getenv("TEST_DB_NAME", db.DB_NAME)
-		db.DB_USER = os.getenv("TEST_DB_USER", db.DB_USER)
-		db.DB_PASSWORD = os.getenv("TEST_DB_PASSWORD", db.DB_PASSWORD)
-		if db.DB_HOST not in {"localhost", "127.0.0.1", "::1"}:
-			raise unittest.SkipTest("Database tests require a local PostgreSQL host")
+		use_local_test_database()
 
 	def setUp(self):
 		self.connection = db.create_connection()
@@ -169,20 +162,56 @@ class OutboxDatabaseTests(unittest.TestCase):
 	def _clear(self):
 		with self.connection, self.connection.cursor() as cur:
 			cur.execute("DELETE FROM notification_outbox")
+		db.delete_subscriber(self.connection)
 
 	def _insert(self):
-		return db.insert_outbox_event(self.connection, "APPOINTMENT_FOUND", {}, 60)
+		return db.insert_outbox_event(self.connection, "APPOINTMENT_FOUND", {})
 
-	def test_insert_skips_duplicate_inside_cooldown(self):
+	def test_insert_skips_while_event_is_pending_or_processing(self):
 		self.assertTrue(self._insert())
 		self.assertFalse(self._insert())
 
-	def test_insert_after_cooldown(self):
+		db.claim_outbox_events(self.connection)
+		self.assertFalse(self._insert())
+
+	def test_insert_succeeds_after_previous_event_is_sent(self):
 		self._insert()
-		with self.connection, self.connection.cursor() as cur:
-			cur.execute("UPDATE notification_outbox SET created_at = now() - interval '61 minutes'")
+		(event_id, *_), = db.claim_outbox_events(self.connection)
+		db.mark_outbox_sent(self.connection, event_id)
 
 		self.assertTrue(self._insert())
+
+	def test_alert_recipients_respect_per_subscriber_cooldown(self):
+		for telegram_id in (1, 2, 3, 4):
+			db.subscriber_insert_query(self.connection, f"user{telegram_id}@uni-trier.de", telegram_id)
+		db.subscriber_update_query(self.connection, 4, force=True)
+		self._insert()
+		with self.connection, self.connection.cursor() as cur:
+			cur.execute(
+				"""
+				INSERT INTO alert_delivery (outbox_id, telegram_id, sent_at)
+				SELECT id, t.telegram_id, now() - t.age
+				FROM notification_outbox,
+					(VALUES (1, interval '30 minutes'), (2, interval '59 minutes'), (4, interval '2 hours')) AS t(telegram_id, age)
+				"""
+			)
+
+		# 1: alerted 30 min ago. 2: 59 min ago, inside the 1-minute grace. 3: never alerted. 4: inactive.
+		self.assertEqual(sorted(db.get_alert_recipients(self.connection, 60)), [2, 3])
+
+	def test_deleting_old_outbox_rows_removes_their_deliveries(self):
+		self._insert()
+		(event_id, *_), = db.claim_outbox_events(self.connection)
+		db.record_alert_delivery(self.connection, event_id, 1)
+		db.record_alert_delivery(self.connection, event_id, 1)  # Duplicate is ignored.
+		with self.connection, self.connection.cursor() as cur:
+			cur.execute("UPDATE notification_outbox SET created_at = now() - interval '31 days'")
+
+		db.delete_old_rows(self.connection)
+
+		with self.connection, self.connection.cursor() as cur:
+			cur.execute("SELECT count(*) FROM alert_delivery")
+			self.assertEqual(cur.fetchone()[0], 0)
 
 	def test_claim_skips_rows_locked_by_another_transaction(self):
 		with self.connection, self.connection.cursor() as cur:
