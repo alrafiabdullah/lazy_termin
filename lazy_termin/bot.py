@@ -21,6 +21,7 @@ from telegram.ext import (
 
 from .config import (
     ADMIN_ID,
+    ALERT_COOLDOWN_MINUTES,
     ALLOWED_DOMAINS,
     MAXIMUM_ENTRIES,
     TELEGRAM_BOT_TOKEN,
@@ -33,6 +34,7 @@ from .db import (
     create_connection,
     delete_old_rows,
     get_active_subscribers,
+    get_alert_recipients,
     get_connection,
     get_earliest_expired_subscriber,
     get_message_stats,
@@ -40,6 +42,7 @@ from .db import (
     initialize_pool,
     mark_outbox_error,
     mark_outbox_sent,
+    record_alert_delivery,
     record_message_event,
     release_connection,
     reset_stuck_outbox_events,
@@ -159,9 +162,11 @@ async def send_with_retry(bot: Bot, telegram_id, text):
         await bot.send_message(chat_id=telegram_id, text=text)
 
 
-async def send_to_users(bot: Bot):
+async def send_to_users(bot: Bot, outbox_id):
+    """Alert every subscriber who has not been alerted within the cooldown."""
     with db_connection() as connection:
-        telegram_ids = get_active_subscribers(connection)
+        active_count = len(get_active_subscribers(connection))
+        telegram_ids = get_alert_recipients(connection, ALERT_COOLDOWN_MINUTES)
     logger.debug(f"telegram_ids: {telegram_ids}")
     message = (
         "A new appointment is available! 🎉\n\n"
@@ -174,16 +179,26 @@ async def send_to_users(bot: Bot):
     for telegram_id in telegram_ids:
         try:
             await send_with_retry(bot, telegram_id, message)
-            successful_sends += 1
         except Forbidden:
             logger.info(f"User {telegram_id} blocked the bot; skipping.")
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send message to {telegram_id}: {e}")
+        else:
+            # Recorded per send, so a retry of this event skips users already alerted.
+            with db_connection() as connection:
+                record_alert_delivery(connection, outbox_id, telegram_id)
+            successful_sends += 1
         await asyncio.sleep(SEND_PAUSE_SECONDS)
-    if len(telegram_ids) > 0:
+    if successful_sends > 0:
         # A failed admin summary must not make the dispatcher resend to every user.
         try:
-            await send_message_to_admin(bot, message=f"Appointment available, message sent to {successful_sends}/{len(telegram_ids)} user(s).")
+            await send_message_to_admin(
+                bot,
+                message=(
+                    f"Appointment available, message sent to {successful_sends}/{len(telegram_ids)} eligible user(s); "
+                    f"{active_count - len(telegram_ids)} skipped (alerted within cooldown)."
+                ),
+            )
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to send the admin summary: {e}")
 
@@ -220,7 +235,7 @@ async def dispatch_outbox(context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             if event_type != "APPOINTMENT_FOUND":
                 raise ValueError(f"Unknown event type: {event_type}")
-            await send_to_users(context.bot)
+            await send_to_users(context.bot, event_id)
         except Exception as e:  # noqa: BLE001
             logger.exception(f"Outbox event {event_id} failed on attempt {attempts}.")
             with db_connection() as connection:
