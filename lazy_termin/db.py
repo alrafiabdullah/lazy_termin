@@ -6,6 +6,7 @@ from psycopg2.extras import Json
 from psycopg2.pool import ThreadedConnectionPool
 
 from .config import (
+    ADMIN_ID,
     ALLOWED_DOMAINS,
     DB_HOST,
     DB_NAME,
@@ -137,12 +138,24 @@ def subscriber_schema(conn):
             ON notification_outbox (status, created_at);
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS alert_delivery (
+            outbox_id BIGINT NOT NULL REFERENCES notification_outbox(id) ON DELETE CASCADE,
+            telegram_id BIGINT NOT NULL,
+            sent_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (outbox_id, telegram_id)
+        );
+        CREATE INDEX IF NOT EXISTS alert_delivery_telegram_id_sent_at_idx
+            ON alert_delivery (telegram_id, sent_at);
+        """
+    )
     conn.commit()
     return True
 
 
-def insert_outbox_event(conn, event_type, payload, cooldown_minutes):
-    """Insert an outbox event unless one of the same type exists inside the cooldown.
+def insert_outbox_event(conn, event_type, payload):
+    """Insert an outbox event unless one of the same type is still waiting to be sent.
     :return: True if a row was inserted
     """
     with conn:
@@ -156,11 +169,10 @@ def insert_outbox_event(conn, event_type, payload, cooldown_minutes):
             WHERE NOT EXISTS (
                 SELECT 1 FROM notification_outbox
                 WHERE event_type = %s
-                  AND status IN ('pending', 'processing', 'sent')
-                  AND created_at > now() - make_interval(mins => %s)
+                  AND status IN ('pending', 'processing')
             )
             """,
-            (event_type, Json(payload), event_type, cooldown_minutes),
+            (event_type, Json(payload), event_type),
         )
         inserted = cur.rowcount == 1
         if inserted:
@@ -266,9 +278,9 @@ def get_message_stats(conn, since):
         """
         SELECT COUNT(*), COUNT(DISTINCT telegram_id)
         FROM telegram_message_event
-        WHERE received_at >= %s
+        WHERE received_at >= %s AND telegram_id != %s
         """,
-        (since,),
+        (since, ADMIN_ID),
     )
     message_count, user_count = cur.fetchone()
     return message_count, user_count
@@ -363,6 +375,50 @@ def get_active_subscribers(conn):
     )
     data = cur.fetchall()
     return [row[0] for row in data]
+
+
+def get_alert_recipients(conn, cooldown_minutes):
+    """Return active subscribers who have not been alerted within the cooldown.
+
+    The 1-minute grace stops a delivery a few seconds short of the cooldown
+    from pushing the next alert to a later scrape.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT telegram_id
+        FROM (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY telegram_id
+                       ORDER BY start_date DESC, end_date DESC, unique_id DESC
+                   ) AS rn
+            FROM subscriber
+        ) ranked
+        WHERE rn = 1
+          AND is_active = TRUE
+          AND NOT EXISTS (
+              SELECT 1 FROM alert_delivery
+              WHERE alert_delivery.telegram_id = ranked.telegram_id
+                AND alert_delivery.sent_at > now() - make_interval(mins => %s)
+          )
+        """,
+        (cooldown_minutes - 1,),
+    )
+    return [row[0] for row in cur.fetchall()]
+
+
+def record_alert_delivery(conn, outbox_id, telegram_id):
+    """Record that one alert reached one subscriber."""
+    with conn:
+        conn.cursor().execute(
+            """
+            INSERT INTO alert_delivery (outbox_id, telegram_id)
+            VALUES (%s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (outbox_id, telegram_id),
+        )
 
 
 def check_active_subscriber_count(conn):
